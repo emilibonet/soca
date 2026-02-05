@@ -1,3 +1,14 @@
+### CUSTOM IGNORES ### 
+# Documentation files
+*.md
+!README.md
+*.pdf
+
+# Notebooks
+*.ipynb
+
+### PRE-DEFINED IGNORES ###
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -205,3 +216,4 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
