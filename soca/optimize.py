@@ -16,6 +16,7 @@ from .utils import (
 
 logger = get_logger(__name__)
 
+MAX_QUEUE_DEPTH = 20
 
 def find_optimal_assignment(
     castellers: pd.DataFrame,
@@ -163,7 +164,7 @@ def _get_valid_candidates(
     """
     
     # Determine filtering strictness based on position type
-    peripheral_positions = ['daus', 'laterals', 'primeres_mans', 'mans']
+    peripheral_positions = [] # ['daus', 'laterals', 'primeres_mans', 'mans']
     is_peripheral = any(pos in position_spec.position_name for pos in peripheral_positions)
     
     # Start with flexible filtering for peripheral positions
@@ -336,9 +337,9 @@ def _calculate_candidate_score(
     if min_target <= height <= max_target:
         height_score = 0.0
     elif height < min_target:
-        height_score = (min_target - height) / 10.0
+        height_score = (min_target - height) * position_spec.height_penalty_factor
     else:
-        height_score = (height - max_target) / 10.0
+        height_score = (height - max_target) * position_spec.height_penalty_factor
     
     score += height_score * position_spec.height_weight
     
@@ -381,7 +382,7 @@ def _calculate_candidate_score(
         if valid_group:
             all_heights = [c['Alçada (cm)'] for c in valid_group] + [height]
             height_variance = np.var(all_heights)
-            score += height_variance * position_spec.similarity_weight * 0.1
+            score += height_variance * position_spec.height_similarity_weight * 0.1
     
     return score
 
@@ -730,9 +731,6 @@ def simulated_annealing_assignment(
         Optimal assignment found
     """
     
-    import random
-    import math
-    
     column_names = list(columns.keys())
     candidate_names = list(candidates['Nom complet'])
     
@@ -833,8 +831,6 @@ def _generate_random_valid_assignment(
     
     Used as initial solution for simulated annealing.
     """
-    import random
-    
     assignment = {}
     available = candidate_names.copy()
     random.shuffle(available)
@@ -867,8 +863,6 @@ def _generate_neighbor_assignment(
     
     Returns a new assignment with one of these modifications.
     """
-    import random
-    
     neighbor = {col: list(assigned) for col, assigned in current_assignment.items()}
     
     # Get all currently assigned castellers
@@ -1082,6 +1076,11 @@ def _calculate_reference_heights_for_queue(
 ) -> float:
     """Calculate reference height for a queue position at given depth.
     
+    FIXES:
+    - Depth 1: Use MAX(column heights) instead of average for multi-column queues
+    - Depth 1: Properly sum baix+segon per column before taking max
+    - Depth >1: No change (uses previous depth in same queue)
+    
     Parameters
     ----------
     queue_spec : QueueSpec
@@ -1089,7 +1088,7 @@ def _calculate_reference_heights_for_queue(
     depth : int
         Depth level (1-indexed)
     all_assignments : dict
-        Current assignments
+        Current assignments (finalized)
     column_tronc_heights : dict
         Tronc heights per column
     castellers : pd.DataFrame
@@ -1102,20 +1101,40 @@ def _calculate_reference_heights_for_queue(
     """
     if depth == 1:
         # Use baix + segon from column(s)
-        total = 0
+        # FIX: For multi-column queues (daus), use MAX to represent constraining column
+        column_heights = []
+        
         for col in queue_spec.column_refs:
+            col_total = 0
+            found_baix = False
+            found_segon = False
+            
             # Get baix height
             baix_assignment = all_assignments.get('baix', {}).get(col)
-            if baix_assignment and baix_assignment[0]:
+            if baix_assignment and len(baix_assignment) > 0 and baix_assignment[0]:
                 baix_data = castellers[castellers['Nom complet'] == baix_assignment[0]]
                 if not baix_data.empty:
-                    total += baix_data['Alçada (cm)'].iloc[0]
+                    col_total += baix_data['Alçada (cm)'].iloc[0]
+                    found_baix = True
             
             # Get segon height
             if column_tronc_heights and col in column_tronc_heights:
-                total += column_tronc_heights[col].get('segon', 175.0)
+                segon_height = column_tronc_heights[col].get('segon', 0)
+                if segon_height > 0:
+                    col_total += segon_height
+                    found_segon = True
+            
+            # Only include columns where we have both baix and segon
+            if found_baix and found_segon:
+                column_heights.append(col_total)
         
-        return total / len(queue_spec.column_refs)  # Average for multi-column queues
+        if not column_heights:
+            logger.warning("Could not find baix+segon for %s depth 1 - using fallback 350cm",
+                          queue_spec.queue_id)
+            return 350.0
+        
+        # FIX: Use MAX for multi-column (daus must satisfy tallest column constraint)
+        return max(column_heights)
     else:
         # Use previous depth in same queue
         queue_type = queue_spec.queue_type
@@ -1125,14 +1144,15 @@ def _calculate_reference_heights_for_queue(
             prev_assignments = all_assignments[queue_type][queue_id]
             if len(prev_assignments) >= depth - 1:
                 prev_assignment = prev_assignments[depth - 2]
-                if prev_assignment and prev_assignment[0]:
+                if prev_assignment and len(prev_assignment) > 0 and prev_assignment[0]:
                     prev_data = castellers[castellers['Nom complet'] == prev_assignment[0]]
                     if not prev_data.empty:
                         return prev_data['Alçada (cm)'].iloc[0]
         
         # Fallback
+        logger.warning("Could not find reference for %s %s depth %d - using fallback 175cm",
+                      queue_type, queue_id, depth)
         return 175.0
-
 
 def create_position_spec_from_queue(
     queue_spec: 'QueueSpec',
@@ -1152,19 +1172,18 @@ def create_position_spec_from_queue(
     PositionRequirements
         Position spec for this depth level
     """
-    # Adjust height ratios for depth > 1
+    # Depth 1: use spec's ratios; Depth N>1: use depth_gt1 ratios
     if depth == 1:
         height_min = queue_spec.height_ratio_min
         height_max = queue_spec.height_ratio_max
     else:
-        # Subsequent depths: 80-100% of previous person
-        height_min = 0.80
-        height_max = 1.00
+        height_min = queue_spec.queue_height_ratio_min
+        height_max = queue_spec.queue_height_ratio_max
     
     return PositionRequirements(
         position_name=f'{queue_spec.queue_type}_{queue_spec.queue_id}_depth{depth}',
         expertise_keywords=queue_spec.expertise_keywords,
-        count_per_column=1,  # Always 1 per queue per depth
+        count_per_column=1,
         reference_positions=[],  # Handled by custom height calculation
         height_ratio_min=height_min,
         height_ratio_max=height_max,
@@ -1172,6 +1191,290 @@ def create_position_spec_from_queue(
         weight_preference=queue_spec.weight_preference,
         height_weight=queue_spec.height_weight,
         expertise_weight=queue_spec.expertise_weight,
-        similarity_weight=queue_spec.similarity_weight,
-        weight_factor=queue_spec.weight_factor
+        height_similarity_weight=queue_spec.height_similarity_weight,
+        weight_factor=queue_spec.weight_factor,
+        height_penalty_factor=getattr(queue_spec, 'height_penalty_factor', 0.1)
     )
+
+def global_peripheral_optimization(
+    mans_specs: Dict[str, QueueSpec],
+    daus_specs: Dict[str, QueueSpec],
+    laterals_specs: Dict[str, QueueSpec],
+    mans_depth: int,
+    daus_depth: int,
+    laterals_depth: int,
+    available_castellers: pd.DataFrame,
+    all_castellers: pd.DataFrame,
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
+    all_assignments: Dict,
+    use_weight: bool = True,
+    max_iterations: int = 10000
+) -> Tuple[Dict[str, Dict[str, List[Tuple[str, ...]]]], Dict]:
+    """Global optimization across mans, daus, and laterals simultaneously."""
+    # Merge all specs with type prefix
+    all_specs = {}
+    for qid, spec in mans_specs.items():
+        all_specs[f'mans:{qid}'] = (spec, mans_depth, 'mans')
+    for qid, spec in daus_specs.items():
+        all_specs[f'daus:{qid}'] = (spec, daus_depth, 'daus')
+    for qid, spec in laterals_specs.items():
+        all_specs[f'laterals:{qid}'] = (spec, laterals_depth, 'laterals')
+    
+    candidate_names = list(available_castellers['Nom complet'])
+    
+    # Generate initial solution
+    current_solution = _generate_random_global_assignment(all_specs, candidate_names)
+    current_score = _score_global_assignment(
+        current_solution, all_specs, all_assignments, 
+        column_tronc_heights, all_castellers, use_weight
+    )
+    
+    best_solution = current_solution.copy()
+    best_score = current_score
+    
+    # Adaptive temperature
+    sample_scores = []
+    for _ in range(20):
+        sample = _generate_random_global_assignment(all_specs, candidate_names)
+        sample_scores.append(_score_global_assignment(
+            sample, all_specs, all_assignments, column_tronc_heights, 
+            all_castellers, use_weight
+        ))
+    temperature = np.std(sample_scores) * 2 if len(sample_scores) > 1 else 100.0
+    
+    logger.info("Starting global peripheral optimization (initial score: %.2f)", current_score)
+    
+    iteration = 0
+    no_improvement = 0
+    acceptance_count = 0
+    
+    while iteration < max_iterations and temperature > 0.01:
+        iteration += 1
+        
+        # Generate neighbor
+        neighbor = _generate_neighbor_global_assignment(
+            current_solution, all_specs, candidate_names
+        )
+        neighbor_score = _score_global_assignment(
+            neighbor, all_specs, all_assignments, 
+            column_tronc_heights, all_castellers, use_weight
+        )
+        
+        delta = neighbor_score - current_score
+        
+        if delta < 0 or random.random() < math.exp(-delta / temperature):
+            current_solution = neighbor
+            current_score = neighbor_score
+            acceptance_count += 1
+            
+            if current_score < best_score:
+                best_solution = current_solution.copy()
+                best_score = current_score
+                no_improvement = 0
+            else:
+                no_improvement += 1
+        else:
+            no_improvement += 1
+        
+        # Adaptive cooling
+        if iteration % 100 == 0:
+            acceptance_rate = acceptance_count / 100
+            if acceptance_rate > 0.4:
+                temperature *= 0.85
+            elif acceptance_rate < 0.2:
+                temperature *= 0.98
+            else:
+                temperature *= 0.9
+            acceptance_count = 0
+            
+            if iteration % 1000 == 0:
+                logger.info("Iteration %d, best=%.2f", iteration, best_score)
+        
+        if no_improvement > 1500:
+            break
+    
+    logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
+    
+    # Unpack solution by type
+    result = {'mans': {}, 'daus': {}, 'laterals': {}}
+    for key, assignments in best_solution.items():
+        queue_type, queue_id = key.split(':', 1)
+        result[queue_type][queue_id] = assignments
+    
+    stats = {'final_score': best_score, 'iterations': iteration}
+    return result, stats
+
+
+def _generate_random_global_assignment(
+    all_specs: Dict[str, Tuple[QueueSpec, int, str]],
+    candidate_names: List[str]
+) -> Dict[str, List[Tuple[str, ...]]]:
+    """Generate random assignment across all queue types."""
+    assignment = {}
+    available = candidate_names.copy()
+    random.shuffle(available)
+    
+    idx = 0
+    for key, (spec, max_depth, qtype) in all_specs.items():
+        assignment[key] = []
+        for depth in range(max_depth):
+            if idx < len(available):
+                assignment[key].append((available[idx],))
+                idx += 1
+            else:
+                assignment[key].append((None,))
+    
+    return assignment
+
+
+def _generate_neighbor_global_assignment(
+    current: Dict[str, List[Tuple[str, ...]]],
+    all_specs: Dict[str, Tuple[QueueSpec, int, str]],
+    all_candidates: List[str]
+) -> Dict[str, List[Tuple[str, ...]]]:
+    """Generate neighbor by swapping or replacing across queues/types."""
+    import random
+    
+    neighbor = {k: [a for a in v] for k, v in current.items()}
+    
+    # Get assigned and unassigned
+    all_assigned = set()
+    assigned_positions = []
+    for key in all_specs.keys():
+        for depth in range(len(neighbor[key])):
+            if neighbor[key][depth] and neighbor[key][depth][0]:
+                assigned_positions.append((key, depth))
+                all_assigned.add(neighbor[key][depth][0])
+    
+    unassigned = [c for c in all_candidates if c not in all_assigned]
+    
+    if len(assigned_positions) < 2:
+        return neighbor
+    
+    # Choose move type
+    move_types = ['swap', 'replace'] if unassigned else ['swap']
+    move = random.choice(move_types)
+    
+    if move == 'swap':
+        # Swap between any two positions
+        (key1, depth1), (key2, depth2) = random.sample(assigned_positions, 2)
+        neighbor[key1][depth1], neighbor[key2][depth2] = neighbor[key2][depth2], neighbor[key1][depth1]
+    else:
+        # Replace with unassigned
+        key, depth = random.choice(assigned_positions)
+        replacement = random.choice(unassigned)
+        neighbor[key][depth] = (replacement,)
+    
+    return neighbor
+
+
+def _score_global_assignment(
+    assignment: Dict[str, List[Tuple[str, ...]]],
+    all_specs: Dict[str, Tuple[QueueSpec, int, str]],
+    all_assignments: Dict,
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
+    castellers: pd.DataFrame,
+    use_weight: bool
+) -> float:
+    """Score complete global assignment with strong monotonic penalties."""
+    total_score = 0.0
+    
+    for key, depth_list in assignment.items():
+        spec, max_depth, queue_type = all_specs[key]
+        prev_height = None
+        
+        for depth_idx, assignment_tuple in enumerate(depth_list, start=1):
+            if not assignment_tuple or not assignment_tuple[0]:
+                total_score += 5.0
+                continue
+            
+            name = assignment_tuple[0]
+            candidate = castellers[castellers['Nom complet'] == name]
+            if candidate.empty:
+                total_score += 100.0
+                continue
+            
+            candidate_row = candidate.iloc[0]
+            current_height = candidate_row['Alçada (cm)']
+            
+            # Calculate reference with in-progress context
+            ref_height = _calculate_reference_for_global_assignment(
+                spec, depth_idx, key, assignment, all_assignments,
+                column_tronc_heights, castellers
+            )
+            
+            pos_spec = create_position_spec_from_queue(spec, depth_idx)
+            score = _calculate_candidate_score(
+                candidate_row, ref_height, pos_spec, [], use_weight
+            )
+            total_score += score
+            
+            # STRONG monotonic penalty
+            if depth_idx > 1 and prev_height is not None:
+                if current_height >= prev_height:
+                    violation = current_height - prev_height + 1
+                    total_score += violation * 20.0  # 10x stronger
+            
+            prev_height = current_height
+    
+    # Balance penalty across types
+    type_depths = {'mans': [], 'daus': [], 'laterals': []}
+    for key, depth_list in assignment.items():
+        _, _, queue_type = all_specs[key]
+        filled = len([d for d in depth_list if d and d[0]])
+        type_depths[queue_type].append(filled)
+    
+    # Within-type balance
+    for qtype, depths in type_depths.items():
+        if depths:
+            variance = max(depths) - min(depths)
+            total_score += variance * 10.0
+    
+    return total_score
+
+
+def _calculate_reference_for_global_assignment(
+    queue_spec: QueueSpec,
+    depth: int,
+    current_key: str,
+    global_assignment: Dict[str, List[Tuple[str, ...]]],
+    all_assignments: Dict,
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
+    castellers: pd.DataFrame
+) -> float:
+    """Calculate reference height in global optimization context."""
+    if depth == 1:
+        # Use baix + segon
+        column_heights = []
+        for col in queue_spec.column_refs:
+            col_total = 0
+            found_baix = found_segon = False
+            
+            baix_assignment = all_assignments.get('baix', {}).get(col)
+            if baix_assignment and baix_assignment[0]:
+                baix_data = castellers[castellers['Nom complet'] == baix_assignment[0]]
+                if not baix_data.empty:
+                    col_total += baix_data['Alçada (cm)'].iloc[0]
+                    found_baix = True
+            
+            if column_tronc_heights and col in column_tronc_heights:
+                segon_height = column_tronc_heights[col].get('segon', 0)
+                if segon_height > 0:
+                    col_total += segon_height
+                    found_segon = True
+            
+            if found_baix and found_segon:
+                column_heights.append(col_total)
+        
+        return max(column_heights) if column_heights else 350.0
+    else:
+        # Use previous depth in same queue
+        prev_assignments = global_assignment.get(current_key, [])
+        if len(prev_assignments) >= depth - 1:
+            prev_assignment = prev_assignments[depth - 2]
+            if prev_assignment and prev_assignment[0]:
+                prev_data = castellers[castellers['Nom complet'] == prev_assignment[0]]
+                if not prev_data.empty:
+                    return prev_data['Alçada (cm)'].iloc[0]
+        
+        return 175.0

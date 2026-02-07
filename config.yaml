@@ -1,0 +1,82 @@
+# Castell Assignment Configuration
+# Tunable parameters for position and queue specifications
+
+positions:
+  baix:
+    height_ratio_min: 1.0
+    height_ratio_max: 1.0
+    height_weight: 0.0
+    expertise_weight: 1.0
+    weight_factor: 0.5
+    height_penalty_factor: 0.10
+    weight_preference: heavier
+  
+  crossa:
+    height_ratio_min: 0.90
+    height_ratio_max: 0.95
+    height_weight: 1.0
+    expertise_weight: 0.5
+    height_similarity_weight: 0.5
+    weight_factor: 0.2
+    height_penalty_factor: 0.10
+    weight_preference: neutral
+  
+  contrafort:
+    height_ratio_min: 1.00
+    height_ratio_max: 1.05
+    height_weight: 1.0
+    expertise_weight: 0.5
+    height_similarity_weight: 0.3
+    weight_factor: 0.3
+    height_penalty_factor: 0.10
+    weight_preference: heavier
+  
+  agulla:    # Reference: baix + segon
+    height_ratio_min: 0.50
+    height_ratio_max: 0.515
+    height_weight: 1.0
+    expertise_weight: 0.5
+    weight_factor: 0.3
+    height_penalty_factor: 0.10
+    weight_preference: lighter
+
+
+queues:      # References: baix + segon (depth = 1); depth - 1 (depth > 1)
+  mans:
+    max_depth: 5
+    height_ratio_min: 0.50
+    height_ratio_max: 0.60
+    queue_height_ratio_min: 0.975
+    queue_height_ratio_max: 1.00
+    height_weight: 0.6
+    expertise_weight: 0.5
+    height_similarity_weight: 0.5
+    weight_factor: 0.2
+    height_penalty_factor: 1.0
+    weight_preference: heavier
+  
+  daus:
+    max_depth: 3
+    height_ratio_min: 0.50
+    height_ratio_max: 0.60
+    queue_height_ratio_min: 0.975
+    queue_height_ratio_max: 1.00
+    height_weight: 0.6
+    expertise_weight: 0.5
+    height_similarity_weight: 0.5
+    weight_factor: 0.3
+    height_penalty_factor: 1.0
+    weight_preference: heavier
+  
+  laterals:
+    max_depth: 3
+    height_ratio_min: 0.48
+    height_ratio_max: 0.50
+    queue_height_ratio_min: 0.975
+    queue_height_ratio_max: 1.0
+    height_weight: 0.8
+    expertise_weight: 0.3
+    height_similarity_weight: 0.5
+    weight_factor: 0.2
+    height_penalty_factor: 1.0
+    weight_preference: neutral

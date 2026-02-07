@@ -47,8 +47,9 @@ class PositionRequirements:
     # Scoring weights
     height_weight: float = 1.0
     expertise_weight: float = 0.5
-    similarity_weight: float = 0.3
+    height_similarity_weight: float = 0.3
     weight_factor: float = 0.2
+    height_penalty_factor: float = 0.1
     
     # Optional constraints
     min_experience_level: int = 0  # 0=any, 1=secondary, 2=primary only
@@ -57,17 +58,23 @@ class PositionRequirements:
 @dataclass
 class QueueSpec:
     """Specification for a queue position (mans, daus, laterals)."""
-    queue_id: str  # 'Rengla', 'R↔P', 'Rengla-left', etc.
-    queue_type: str  # 'mans', 'daus', 'laterals'
-    column_refs: List[str]  # ['Rengla'] or ['Rengla', 'Plena'] for daus
+    queue_id: str
+    queue_type: str
+    column_refs: List[str]
     expertise_keywords: List[str]
     height_ratio_min: float
     height_ratio_max: float
+    queue_height_ratio_min: float = 0.80  # For depth > 1
+    queue_height_ratio_max: float = 1.00  # For depth > 1
     weight_preference: WeightPreference = WeightPreference.NEUTRAL
     height_weight: float = 0.8
     expertise_weight: float = 0.5
-    similarity_weight: float = 0.1
+    height_similarity_weight: float = 0.1
     weight_factor: float = 0.2
+    # Maximum allowed depth for this queue (can be overridden via YAML)
+    max_depth: int = 3
+    # Penalty factor for queue height deviations (applies when converted to PositionRequirements)
+    height_penalty_factor: float = 0.1
 
 # Queue specifications for standard 3-column castell
 MANS_QUEUE_SPECS = {
@@ -76,11 +83,16 @@ MANS_QUEUE_SPECS = {
         queue_type='mans',
         column_refs=['Rengla'],
         expertise_keywords=['primeres'],
-        height_ratio_min=0.52,  # For depth 1
+        height_ratio_min=0.52,
         height_ratio_max=1.0,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.8,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Plena': QueueSpec(
         queue_id='Plena',
@@ -89,9 +101,14 @@ MANS_QUEUE_SPECS = {
         expertise_keywords=['primeres'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.8,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Buida': QueueSpec(
         queue_id='Buida',
@@ -100,9 +117,14 @@ MANS_QUEUE_SPECS = {
         expertise_keywords=['primeres'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.8,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
 }
 
@@ -114,9 +136,13 @@ DAUS_QUEUE_SPECS = {
         expertise_keywords=['Dau/Vent'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.8,
         expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
         weight_factor=0.3
     ),
     'P↔B': QueueSpec(
@@ -126,9 +152,13 @@ DAUS_QUEUE_SPECS = {
         expertise_keywords=['Dau/Vent'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.8,
         expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
         weight_factor=0.3
     ),
     'B↔R': QueueSpec(
@@ -138,9 +168,13 @@ DAUS_QUEUE_SPECS = {
         expertise_keywords=['Dau/Vent'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.8,
         expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
         weight_factor=0.3
     ),
 }
@@ -153,9 +187,14 @@ LATERALS_QUEUE_SPECS = {
         expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Rengla-right': QueueSpec(
         queue_id='Rengla-right',
@@ -164,9 +203,14 @@ LATERALS_QUEUE_SPECS = {
         expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Plena-left': QueueSpec(
         queue_id='Plena-left',
@@ -175,9 +219,14 @@ LATERALS_QUEUE_SPECS = {
         expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Plena-right': QueueSpec(
         queue_id='Plena-right',
@@ -186,9 +235,14 @@ LATERALS_QUEUE_SPECS = {
         expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Buida-left': QueueSpec(
         queue_id='Buida-left',
@@ -197,9 +251,14 @@ LATERALS_QUEUE_SPECS = {
         expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
     'Buida-right': QueueSpec(
         queue_id='Buida-right',
@@ -208,9 +267,14 @@ LATERALS_QUEUE_SPECS = {
         expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
+        queue_height_ratio_min=0.80,
+        queue_height_ratio_max=1.00,
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
-        expertise_weight=0.5
+        expertise_weight=0.5,
+        height_similarity_weight=0.1,
+        height_penalty_factor=0.1,
+        weight_factor=0.2
     ),
 }
 
@@ -227,7 +291,8 @@ POSITION_SPECS = {
         weight_preference=WeightPreference.HEAVIER,
         height_weight=0.0,
         expertise_weight=1.0,
-        weight_factor=0.5
+        weight_factor=0.5,
+        height_penalty_factor=0.1
     ),
 
     'crossa': PositionRequirements(
@@ -241,8 +306,9 @@ POSITION_SPECS = {
         weight_preference=WeightPreference.NEUTRAL,
         height_weight=1.0,
         expertise_weight=0.5,
-        similarity_weight=0.5,
-        weight_factor=0.2
+        height_similarity_weight=0.5,
+        weight_factor=0.2,
+        height_penalty_factor=0.1
     ),
 
     'contrafort': PositionRequirements(
@@ -256,8 +322,9 @@ POSITION_SPECS = {
         weight_preference=WeightPreference.HEAVIER,
         height_weight=1.0,
         expertise_weight=0.5,
-        similarity_weight=0.3,
-        weight_factor=0.3
+        height_similarity_weight=0.3,
+        weight_factor=0.3,
+        height_penalty_factor=0.1
     ),
 
     'agulla': PositionRequirements(
@@ -271,7 +338,8 @@ POSITION_SPECS = {
         weight_preference=WeightPreference.LIGHTER,
         height_weight=1.0,
         expertise_weight=0.5,
-        weight_factor=0.3
+        weight_factor=0.3,
+        height_penalty_factor=0.1
     ),
 }
 
@@ -397,3 +465,69 @@ def add_castellers(df: pd.DataFrame, new_castellers: List[Casteller], name_col: 
 
     result = pd.concat([df_reidx, new_df_reidx], ignore_index=True, sort=False)
     return result
+
+
+def apply_spec_overrides(overrides: Optional[Dict[str, Any]]) -> None:
+    """Apply runtime overrides to POSITION_SPECS and queue specs from YAML/dict.
+    
+    Parameters
+    ----------
+    overrides : dict or None
+        Structure:
+        {
+            'positions': {
+                'baix': {'height_ratio_min': 1.0, 'height_weight': 0.0, ...},
+                'crossa': {...},
+                ...
+            },
+            'queues': {
+                'mans': {'height_ratio_min': 0.52, 'height_weight': 0.8, ...},
+                'daus': {...},
+                'laterals': {...}
+            }
+        }
+    """
+    if overrides is None:
+        return
+    
+    # Apply position overrides
+    if 'positions' in overrides:
+        for pos_name, params in overrides['positions'].items():
+            if pos_name not in POSITION_SPECS:
+                warnings.warn(f"Unknown position '{pos_name}' in overrides")
+                continue
+            
+            spec = POSITION_SPECS[pos_name]
+            for key, value in params.items():
+                if hasattr(spec, key):
+                    # Convert string enum values
+                    if key == 'weight_preference' and isinstance(value, str):
+                        value = WeightPreference(value.lower())
+                    elif key == 'optimization_objective' and isinstance(value, str):
+                        value = OptimizationObjective(value.lower())
+                    setattr(spec, key, value)
+                else:
+                    warnings.warn(f"Unknown parameter '{key}' for position '{pos_name}'")
+    
+    # Apply queue overrides (shared across queue type)
+    if 'queues' in overrides:
+        queue_spec_maps = {
+            'mans': MANS_QUEUE_SPECS,
+            'daus': DAUS_QUEUE_SPECS,
+            'laterals': LATERALS_QUEUE_SPECS
+        }
+        
+        for queue_type, params in overrides['queues'].items():
+            if queue_type not in queue_spec_maps:
+                warnings.warn(f"Unknown queue type '{queue_type}' in overrides")
+                continue
+            
+            # Apply to all queues of this type
+            for queue_id, spec in queue_spec_maps[queue_type].items():
+                for key, value in params.items():
+                    if hasattr(spec, key):
+                        if key == 'weight_preference' and isinstance(value, str):
+                            value = WeightPreference(value.lower())
+                        setattr(spec, key, value)
+                    else:
+                        warnings.warn(f"Unknown parameter '{key}' for queue type '{queue_type}'")

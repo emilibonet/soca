@@ -23,18 +23,26 @@ from .utils import get_logger
 
 logger = get_logger(__name__)
 
-from .optimize import find_optimal_assignment
+from .optimize import (
+    find_optimal_assignment,
+    _calculate_reference_heights_for_queue,
+    _calculate_candidate_score,
+    create_position_spec_from_queue,
+)
 
 from .utils import (
     build_columns,
     compute_column_tronc_heights,
 )
 
-from .queue_assign import assign_rows_pipeline
-
 from .data import (
-    POSITION_SPECS
+    POSITION_SPECS,
+    MANS_QUEUE_SPECS,
+    DAUS_QUEUE_SPECS,
+    LATERALS_QUEUE_SPECS
 )
+
+from .queue_assign import assign_rows_pipeline
 
 # Update build_castell_assignment() - replace column references
 
@@ -55,6 +63,8 @@ def build_castell_assignment(
     
     for pos in castell_config['tronc_positions']:
         all_assignments.setdefault(pos, {})
+    # Collect optimization stats per position (final score, iterations, etc.)
+    assignment_stats: Dict[str, Dict] = {}
     
     # Assign pinya-level tronc (baix only)
     pinya_tronc_positions = ['baix']
@@ -71,15 +81,17 @@ def build_castell_assignment(
         
         if position_name in POSITION_SPECS:
             spec = POSITION_SPECS[position_name]
-            computed_assignment = find_optimal_assignment(
+            computed_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=spec,
                 previous_assignments=all_assignments,
                 columns=columns,
                 column_tronc_heights=None,
                 optimization_method=optimization_method,
-                use_weight=use_weight
+                use_weight=use_weight,
+                return_stats=True
             )
+            assignment_stats[position_name] = stats
             
             all_assignments.setdefault(position_name, {})
             for col_name, value in computed_assignment.items():
@@ -99,15 +111,17 @@ def build_castell_assignment(
         
         if missing_columns:
             crossa_spec = POSITION_SPECS['crossa']
-            computed_crossa_assignment = find_optimal_assignment(
+            computed_crossa_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=crossa_spec,
                 previous_assignments=all_assignments,
                 columns=columns,
                 column_tronc_heights=None,
                 optimization_method=optimization_method,
-                use_weight=use_weight
+                use_weight=use_weight,
+                return_stats=True
             )
+            assignment_stats['crossa'] = stats
             
             for col_name, value in computed_crossa_assignment.items():
                 if col_name not in all_assignments['crossa'] or not all_assignments['crossa'].get(col_name):
@@ -122,15 +136,17 @@ def build_castell_assignment(
         
         if missing_columns:
             contrafort_spec = POSITION_SPECS['contrafort']
-            computed_contrafort_assignment = find_optimal_assignment(
+            computed_contrafort_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=contrafort_spec,
                 previous_assignments=all_assignments,
                 columns=columns,
                 column_tronc_heights=None,
                 optimization_method=optimization_method,
-                use_weight=use_weight
+                use_weight=use_weight,
+                return_stats=True
             )
+            assignment_stats['contrafort'] = stats
             
             for col_name, value in computed_contrafort_assignment.items():
                 if col_name not in all_assignments['contrafort'] or not all_assignments['contrafort'].get(col_name):
@@ -152,22 +168,25 @@ def build_castell_assignment(
         
         if missing_columns:
             agulla_spec = POSITION_SPECS['agulla']
-            computed_agulla_assignment = find_optimal_assignment(
+            computed_agulla_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=agulla_spec,
                 previous_assignments=all_assignments,
                 columns=columns,
                 column_tronc_heights=column_tronc_heights,
                 optimization_method=optimization_method,
-                use_weight=use_weight
+                use_weight=use_weight,
+                return_stats=True
             )
+            assignment_stats['agulla'] = stats
             
             for col_name, value in computed_agulla_assignment.items():
                 if col_name not in all_assignments['agulla'] or not all_assignments['agulla'].get(col_name):
                     all_assignments['agulla'][col_name] = value
     
     
-    peripheral_stats = assign_rows_pipeline(
+    # Collect peripheral assignment results and stats
+    peripheral_result, peripheral_stats = assign_rows_pipeline(
         castellers=castellers,
         columns=columns,
         column_tronc_heights=column_tronc_heights,
@@ -188,10 +207,10 @@ def build_castell_assignment(
     # Print tronc position assignments first (structural order)
     for pos in ['baix', 'crossa', 'contrafort', 'agulla']:
         if pos in all_assignments:
-            _print_tronc_assignment(pos, all_assignments, columns, column_tronc_heights, castellers)
+            _print_tronc_assignment(pos, all_assignments, columns, column_tronc_heights, castellers, assignment_stats.get(pos))
 
     # Then print queue summaries in requested order
-    _print_queue_summary(all_assignments, castellers, columns, column_tronc_heights)
+    _print_queue_summary(all_assignments, castellers, columns, column_tronc_heights, peripheral_stats)
     
     # Validate
     errors, warnings = validate_structure(all_assignments, columns)
@@ -208,6 +227,39 @@ def build_castell_assignment(
         for warn in warnings:
             logger.warning("⚠️ %s", warn)
     
+    # Print unassigned castellers (name, height, expertise)
+    try:
+        # Extract all assigned names from all_assignments (source of truth)
+        all_assigned_names = set()
+        
+        for pos, assignments in all_assignments.items():
+            if pos in ['mans', 'daus', 'laterals']:
+                # Queue structure: {queue_id: [(name,), (name,), ...]}
+                for queue_id, depth_list in assignments.items():
+                    for assignment in depth_list:
+                        if assignment and assignment[0]:
+                            all_assigned_names.add(assignment[0])
+            else:
+                # Standard structure: {column: (name1, name2, ...)}
+                for col_assignments in assignments.values():
+                    if col_assignments:
+                        all_assigned_names.update(c for c in col_assignments if c)
+        
+        unassigned = castellers[~castellers['Nom complet'].isin(all_assigned_names)]
+        if not unassigned.empty:
+            print("\n##### UNASSIGNED CASTELLERS #####")
+            for _, row in unassigned.iterrows():
+                name = row.get('Nom complet', '')
+                h = row.get('Alçada (cm)', None)
+                pos1 = row.get('Posició 1', '')
+                pos2 = row.get('Posició 2', '')
+                expertise = ', '.join([p for p in [pos1, pos2] if p])
+                height_str = f"{h:.1f} cm" if pd.notna(h) else "N/A"
+                print(f"  - {name:<25} {height_str:8}  expertise={expertise}")
+    except Exception:
+        # Non-fatal: don't break pipeline if unassigned reporting fails
+        logger.exception("Failed to compute unassigned castellers list")
+
     return all_assignments
 
 
@@ -215,11 +267,10 @@ def _print_queue_summary(
     all_assignments: Dict,
     castellers: pd.DataFrame,
     columns: Dict[str, float],
-    column_tronc_heights: Optional[Dict[str, Dict[str, float]]]
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
+    peripheral_stats: Optional[Dict[str, Dict]] = None
 ):
     """Print formatted summary of queue assignments with reference/target info."""
-    from .data import MANS_QUEUE_SPECS, DAUS_QUEUE_SPECS, LATERALS_QUEUE_SPECS
-    from .optimize import _calculate_reference_heights_for_queue
 
     queue_mappings = {
         'mans': MANS_QUEUE_SPECS,
@@ -233,7 +284,14 @@ def _print_queue_summary(
 
         queue_specs = queue_mappings.get(queue_type, {})
 
-        print(f"\n##### {queue_type.upper()} #####")
+        stats_for_queue = None
+        if peripheral_stats:
+            stats_for_queue = peripheral_stats.get(queue_type)
+
+        if stats_for_queue and isinstance(stats_for_queue, dict) and 'final_score' in stats_for_queue:
+            print(f"\n##### {queue_type.upper()} #####   score={stats_for_queue['final_score']:.2f}")
+        else:
+            print(f"\n##### {queue_type.upper()} #####")
 
         for queue_id, depth_list in all_assignments[queue_type].items():
             print(f"\n{queue_id}:")
@@ -246,17 +304,39 @@ def _print_queue_summary(
                     ref_height = _calculate_reference_heights_for_queue(
                         queue_spec, depth_idx, all_assignments, column_tronc_heights, castellers
                     )
-                    min_target = ref_height * queue_spec.height_ratio_min
-                    max_target = ref_height * queue_spec.height_ratio_max
+                    
+                    # Use spec ratios for depth 1, 0.80-1.00 for depth > 1
+                    if depth_idx == 1:
+                        min_ratio = queue_spec.height_ratio_min
+                        max_ratio = queue_spec.height_ratio_max
+                    else:
+                        min_ratio = queue_spec.queue_height_ratio_min
+                        max_ratio = queue_spec.queue_height_ratio_max
+                    
+                    min_target = ref_height * min_ratio
+                    max_target = ref_height * max_ratio
                     ref_info = (ref_height, min_target, max_target)
 
                 if assignment and assignment[0]:
                     name = assignment[0]
                     h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                    # Compute per-person penalty (raw score scaled if queue stats provide factor)
+                    try:
+                        candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
+                        pos_spec = None
+                        if queue_spec is not None:
+                            pos_spec = create_position_spec_from_queue(queue_spec, depth_idx)
+                        if pos_spec is not None:
+                            raw_score = _calculate_candidate_score(candidate_row, ref_info[0] if ref_info else h, pos_spec, [], True)
+                        else:
+                            raw_score = 0.0
+                    except Exception:
+                        raw_score = 0.0
+
                     if ref_info:
-                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm")
+                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm   penalty={raw_score:.2f}")
                     else:
-                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm")
+                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
                 else:
                     if ref_info:
                         print(f"  Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm")
@@ -269,7 +349,8 @@ def _print_tronc_assignment(
     all_assignments: Dict,
     columns: Dict[str, float],
     column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
-    castellers: pd.DataFrame
+    castellers: pd.DataFrame,
+    position_stats: Optional[Dict] = None
 ):
     """Print tronc position assignments."""
     from .data import POSITION_SPECS
@@ -295,6 +376,8 @@ def _print_tronc_assignment(
         reference_heights = {col: float(h) for col, h in columns.items()}
     
     print(f"\n##### {position_name.upper()} #####")
+    if position_stats and isinstance(position_stats, dict) and 'final_score' in position_stats:
+        print(f"  score={position_stats['final_score']:.2f}")
     
     for col_name, assigned in all_assignments[position_name].items():
         print(f"\n{col_name}:")
@@ -308,11 +391,19 @@ def _print_tronc_assignment(
         for i, name in enumerate(assigned, 1):
             if name:
                 h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                # Compute per-person penalty using position spec and reference height
+                try:
+                    candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
+                    ref_h = reference_heights[col_name] if reference_heights and col_name in reference_heights else h
+                    raw_score = _calculate_candidate_score(candidate_row, ref_h, position_spec, [castellers[castellers['Nom complet'] == s].iloc[0] for s in assigned if s and s != name], True)
+                except Exception:
+                    raw_score = 0.0
+
                 if reference_heights:
                     ratio_pct = (h / reference_heights[col_name]) * 100
-                    print(f"    {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%")
+                    print(f"    {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%   penalty={raw_score:.2f}")
                 else:
-                    print(f"  {name:<16} {h:3.0f} cm")
+                    print(f"  {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
 
 
 def validate_structure(all_assignments: Dict[str, Dict], columns: Dict[str, float]) -> Tuple[List[str], List[str]]:
