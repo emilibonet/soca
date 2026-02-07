@@ -1,138 +1,21 @@
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Tuple, Optional
+import math
+import random
+from typing import List, Dict, Tuple, Optional, Union
+from .data import (
+    PositionRequirements,
+    OptimizationObjective,
+    WeightPreference,
+    QueueSpec
+)
+from .utils import (
+    get_logger,
+    _get_all_assigned_castellers
+)
 
-from dataclasses import dataclass
-from typing import List
-from enum import Enum
+logger = get_logger(__name__)
 
-
-class WeightPreference(Enum):
-    HEAVIER = "heavier"
-    LIGHTER = "lighter"
-    NEUTRAL = "neutral"
-
-class OptimizationObjective(Enum):
-    COLUMN_BALANCE = "column_balance"          # Minimize variance across columns (baix)
-    EVEN_DISTRIBUTION = "even_distribution"    # Minimize variance across columns (crosses, contraforts, laterals)
-    FILL_ALL_REQUIRED = "fill_all_required"    # Every slot filled before optimizing quality (agulles)
-    HEIGHT_COMPLIANCE = "height_compliance"    # Match height ratios (primeres mans, mans rows)
-
-@dataclass
-class PositionRequirements:
-    """
-    Unified position requirements specification.
-    """
-    position_name: str
-    expertise_keywords: List[str]  # ["baix"] or ["crossa", "cross"]
-    count_per_column: int
-    
-    # Height calculation
-    reference_positions: List[str]  # ["baix"] or ["baix", "segon"]
-    height_ratio_min: float
-    height_ratio_max: float
-    
-    # Optimization
-    optimization_objective: OptimizationObjective
-    weight_preference: WeightPreference = WeightPreference.NEUTRAL
-    
-    # Scoring weights
-    height_weight: float = 1.0
-    expertise_weight: float = 0.5
-    similarity_weight: float = 0.3
-    weight_factor: float = 0.2
-    
-    # Optional constraints
-    min_experience_level: int = 0  # 0=any, 1=secondary, 2=primary only
-
-
-# Position definitions
-POSITION_SPECS = {
-    'baix': PositionRequirements(
-        position_name='baix',
-        expertise_keywords=['baix'],
-        count_per_column=1,
-        reference_positions=[],  # No reference, optimizes column balance
-        height_ratio_min=1.0,  # Not used for baix
-        height_ratio_max=1.0,
-        optimization_objective=OptimizationObjective.COLUMN_BALANCE,
-        weight_preference=WeightPreference.HEAVIER,
-        height_weight=0.0,  # Height compliance not relevant
-        expertise_weight=1.0,
-        weight_factor=0.5
-    ),
-    
-    'crossa': PositionRequirements(
-        position_name='crossa',
-        expertise_keywords=['crossa', 'cross'],
-        count_per_column=2,
-        reference_positions=['baix'],
-        height_ratio_min=0.90,
-        height_ratio_max=0.95,
-        optimization_objective=OptimizationObjective.EVEN_DISTRIBUTION,
-        weight_preference=WeightPreference.NEUTRAL,
-        height_weight=1.0,
-        expertise_weight=0.5,
-        similarity_weight=0.5,
-        weight_factor=0.2
-    ),
-    
-    'contrafort': PositionRequirements(
-        position_name='contrafort',
-        expertise_keywords=['contrafort'],
-        count_per_column=1,  # One contrafort per baix
-        reference_positions=['baix'],
-        height_ratio_min=1.00,
-        height_ratio_max=1.05,
-        optimization_objective=OptimizationObjective.EVEN_DISTRIBUTION,
-        weight_preference=WeightPreference.HEAVIER,
-        height_weight=1.0,
-        expertise_weight=0.5,
-        similarity_weight=0.3,
-        weight_factor=0.3
-    ),
-    
-    
-    'agulla': PositionRequirements(
-        position_name='agulla',
-        expertise_keywords=['agulla'],
-        count_per_column=1,
-        reference_positions=['baix', 'segon'],
-        height_ratio_min=0.50,
-        height_ratio_max=0.515,
-        optimization_objective=OptimizationObjective.FILL_ALL_REQUIRED,
-        weight_preference=WeightPreference.LIGHTER,
-        height_weight=1.0,
-        expertise_weight=0.5,
-        weight_factor=0.3
-    ),
-    
-    'primeres_mans': PositionRequirements(
-        position_name='primeres_mans',
-        expertise_keywords=['primeres'],
-        count_per_column=1,
-        reference_positions=['baix', 'segon'],
-        height_ratio_min=0.52,
-        height_ratio_max=1.0,  # Tallest available above minimum
-        optimization_objective=OptimizationObjective.HEIGHT_COMPLIANCE,
-        weight_preference=WeightPreference.HEAVIER,
-        height_weight=0.8,
-        expertise_weight=0.5
-    ),
-    
-    'lateral': PositionRequirements(
-        position_name='lateral',
-        expertise_keywords=['lateral'],
-        count_per_column=1,
-        reference_positions=['baix', 'segon'],
-        height_ratio_min=0.48,
-        height_ratio_max=0.55,  # Very flexible per manual §3.8
-        optimization_objective=OptimizationObjective.HEIGHT_COMPLIANCE,
-        weight_preference=WeightPreference.NEUTRAL,
-        height_weight=1.0,
-        expertise_weight=0.5
-    ),
-}
 
 def find_optimal_assignment(
     castellers: pd.DataFrame,
@@ -141,7 +24,8 @@ def find_optimal_assignment(
     columns: Dict[str, int],
     column_tronc_heights: Optional[Dict[str, Dict[str, int]]] = None,
     optimization_method: str = 'exhaustive',
-    use_weight: bool = False
+    use_weight: bool = False,
+    return_stats: bool = False
 ) -> Dict[str, Tuple[str, ...]]:
     """
     Unified position assignment algorithm.
@@ -158,7 +42,7 @@ def find_optimal_assignment(
     Returns:
         Dict mapping column names to tuples of assigned casteller names
     """
-    print(f"\n=== {position_spec.position_name.upper()} ===")
+    logger.info("=== %s ===", position_spec.position_name.upper())
     
     # Funnel diagnostics - track the filtering process
     total_in_db = len(castellers)
@@ -177,14 +61,15 @@ def find_optimal_assignment(
     available_count = len(candidates)
     
     # Print funnel view
-    print(f"  {total_in_db} total â†' {total_in_db - already_assigned} unassigned â†' "
-          f"{expertise_count} w/expertise â†' {available_count} available")
-    print(f"  Requested: {position_spec.count_per_column}/col × {len(columns)} = {requested}")
+    logger.info("  %s | total=%d | unassigned=%d | expert=%d | avail=%d",
+            position_spec.position_name.upper(), total_in_db, total_in_db - already_assigned,
+            expertise_count, available_count)
+    logger.info("  Requested: %d/col × %d = %d", position_spec.count_per_column, len(columns), requested)
     
     # Check for shortages
     if available_count < requested:
         shortage = requested - available_count
-        print(f"  âš ï¸  SHORTAGE: {shortage} slots will remain empty")
+        logger.warning("SHORTAGE: %d slots will remain empty", shortage)
     
     # If no candidates with expertise, try relaxed filtering
     if available_count == 0:
@@ -192,12 +77,12 @@ def find_optimal_assignment(
         candidates = candidates[~candidates['Nom complet'].isin(all_assigned)]
         relaxed_count = len(candidates)
         if relaxed_count > 0:
-            print(f"  ðŸ”„ Using relaxed expertise filtering: {relaxed_count} candidates")
+            logger.info("Using relaxed expertise filtering: %d candidates", relaxed_count)
             available_count = relaxed_count
     
     # If still no candidates, return empty assignment
     if len(candidates) == 0:
-        print(f"  No available candidates for {position_spec.position_name}")
+        logger.warning("No available candidates for %s", position_spec.position_name)
         return {col_name: () for col_name in columns.keys()}
 
     # Shortage penalty factor — reduces quality penalties under scarcity (manual §2.2)
@@ -217,33 +102,46 @@ def find_optimal_assignment(
         castellers
     )
     
+    # Track optimization stats
+    optimization_stats = {'method': optimization_method}
+
     # 4. Run optimization
     if optimization_method == 'exhaustive':
-        assignment = _exhaustive_assignment(
+        assignment, stats = _exhaustive_assignment(
             candidates, columns, reference_heights, position_spec, 
             castellers, use_weight, shortage_factor
         )
     elif optimization_method == 'greedy':
-        assignment = _greedy_assignment(
+        assignment, stats = _greedy_assignment(
             candidates, columns, reference_heights, position_spec,
             castellers, use_weight, shortage_factor
         )
     elif optimization_method == 'simulated_annealing':
-        assignment = simulated_annealing_assignment(
+        assignment, stats = simulated_annealing_assignment(
             candidates, columns, reference_heights, position_spec,
             castellers, use_weight, shortage_factor
         )
     elif optimization_method == 'adaptive_simulated_annealing':
-        assignment = adaptive_simulated_annealing_assignment(
+        assignment, stats = adaptive_simulated_annealing_assignment(
             candidates, columns, reference_heights, position_spec,
             castellers, use_weight, shortage_factor
         )
     else:
         raise ValueError(f"Unknown optimization method: {optimization_method}")
     
-    # 5. Print results
-    _print_assignment_results(assignment, position_spec, reference_heights, castellers)
+    # Merge stats and compute shortage info
+    optimization_stats.update(stats)
+    optimization_stats['shortage'] = shortage if available_count < requested else 0
+    optimization_stats['shortage_pct'] = (shortage / requested * 100) if available_count < requested else 0
     
+    # 5. Print results
+    _print_assignment_results(
+        assignment, position_spec, reference_heights, castellers,
+        columns, optimization_stats
+    )
+    
+    if return_stats:
+        return assignment, optimization_stats
     return assignment
 
 
@@ -252,7 +150,8 @@ def _get_valid_candidates(
     position_spec: PositionRequirements,
     allow_relaxed: bool = False,
     requested_count: int = 0,
-) -> pd.DataFrame:
+    return_expertise_counts: bool = False
+) -> Union[pd.DataFrame, Tuple[pd.DataFrame, int, int]]:
     """Filter candidates by expertise.
     
     Parameters
@@ -281,18 +180,26 @@ def _get_valid_candidates(
     
     # Check if any expertise keyword matches
     mask = pd.Series(False, index=castellers.index, dtype=bool)
+    primary_mask = pd.Series(False, index=castellers.index, dtype=bool)
+    secondary_mask = pd.Series(False, index=castellers.index, dtype=bool)
     
     for keyword in position_spec.expertise_keywords:
-        mask = mask | (
-            castellers['Posició 1'].str.contains(keyword, case=False, na=False) |
-            castellers['Posició 2'].str.contains(keyword, case=False, na=False)
-        )
+        pos1_match = castellers['Posició 1'].str.contains(keyword, case=False, na=False)
+        pos2_match = castellers['Posició 2'].str.contains(keyword, case=False, na=False)
+        
+        primary_mask = primary_mask | pos1_match
+        secondary_mask = secondary_mask | (pos2_match & ~pos1_match)
+        mask = mask | pos1_match | pos2_match
     
+    primary_count = primary_mask.sum()
+    secondary_count = secondary_mask.sum()
+
     candidates = castellers[mask].copy()
     
     # For peripheral positions, if few candidates, use more relaxed filtering
     if is_peripheral and requested_count > 0 and len(candidates) < requested_count * 0.5:
-        print(f"  Using relaxed filtering for {position_spec.position_name} ({len(candidates)} specialists < 50% of {requested_count} requested)")
+        logger.info("Using relaxed filtering for %s (%d specialists < 50%% of %d requested)",
+                position_spec.position_name, len(candidates), requested_count)
         # Include candidates with any relevant position experience
         general_keywords = ['primeres', 'Primeres', 'lateral', 'Lateral', 'Dau/Vent', 'dau/vent', 'mans', 'general']
         general_mask = pd.Series(False, index=castellers.index, dtype=bool)
@@ -316,14 +223,14 @@ def _get_valid_candidates(
     # Apply 50% threshold rule
     if is_critical and len(candidates) < (min_required * 0.5) and allow_relaxed:
         shortage_percent = (len(candidates) / min_required) * 100 if min_required > 0 else 0
-        print(f"  ⚠️  CRITICAL shortage for {position_spec.position_name}")
-        print(f"     Available: {len(candidates)} ({shortage_percent:.0f}%) vs Required: {min_required}")
-        print(f"     Relaxing expertise requirements to fill all positions")
+        logger.warning("CRITICAL shortage for %s: available=%d (%.0f%%) vs required=%d — relaxing expertise requirements",
+                   position_spec.position_name, len(candidates), shortage_percent, min_required)
         candidates = castellers.copy()
     
     # If still no candidates and relaxed mode allowed, return all available castellers
     if len(candidates) == 0 and allow_relaxed:
-        print(f"  Warning: No candidates with expertise '{position_spec.expertise_keywords}'. Using all available castellers.")
+        logger.warning("No candidates with expertise %s — using all available castellers",
+                   position_spec.expertise_keywords)
         candidates = castellers.copy()
     
     # Note: We DON'T filter by assignat flag here - that's handled by the pipeline
@@ -343,21 +250,10 @@ def _get_valid_candidates(
             .str.lower()
         )
     
+    if return_expertise_counts:
+        return candidates, primary_count, secondary_count
+    
     return candidates
-
-def _get_all_assigned_castellers(previous_assignments: Dict[str, Dict]) -> List[str]:
-    """Extract all assigned casteller names from previous assignments."""
-    
-    assigned = set()
-    
-    for position_name, assignment in previous_assignments.items():
-        for column, castellers in assignment.items():
-            if isinstance(castellers, (tuple, list)):
-                assigned.update(c for c in castellers if c is not None)
-            elif castellers is not None:
-                assigned.add(castellers)
-    
-    return list(assigned)
 
 def _calculate_reference_heights(
     columns: Dict[str, int],
@@ -411,7 +307,7 @@ def _calculate_reference_heights(
             
             # If still not found, log a warning
             if not height_found:
-                print(f"  Warning: Could not find height for reference position '{ref_pos}' in column '{col_name}'")
+                logger.warning("Could not find height for reference position '%s' in column '%s'", ref_pos, col_name)
         
         reference_heights[col_name] = total_height if total_height > 0 else 175.0  # Fallback
     
@@ -506,8 +402,10 @@ def _greedy_assignment(
     castellers: pd.DataFrame,
     use_weight: bool,
     shortage_factor: float = 1.0,
-) -> Dict[str, Tuple[str, ...]]:
+    return_stats: bool = True
+) -> Tuple[Dict[str, Tuple[str, ...]], Dict]:
     """Greedy assignment algorithm - works for all position types."""
+    stats = {'iterations': 0, 'final_score': 0, 'initial_score': 0}
     
     assignment = {}
     used = set()
@@ -629,7 +527,7 @@ def _greedy_assignment(
             
             assignment[col_name] = tuple(selected) if selected else ()
     
-    return assignment
+    return assignment, stats
 
 
 def _exhaustive_assignment(
@@ -640,10 +538,13 @@ def _exhaustive_assignment(
     castellers: pd.DataFrame,
     use_weight: bool,
     shortage_factor: float = 1.0,
-) -> Dict[str, Tuple[str, ...]]:
+    return_stats: bool = True
+) -> Tuple[Dict[str, Tuple[str, ...]], Dict]:
     """Exhaustive search - adapts to position type."""
     
     from itertools import combinations, product
+
+    stats = {'iterations': 0, 'final_score': 0, 'initial_score': 0}
     
     column_names = list(columns.keys())
     candidate_names = list(candidates['Nom complet'])
@@ -651,7 +552,7 @@ def _exhaustive_assignment(
     # Check feasibility
     total_needed = len(column_names) * position_spec.count_per_column
     if len(candidate_names) < total_needed:
-        print(f"Warning: Not enough candidates. Using greedy.")
+        logger.warning("Not enough candidates; falling back to greedy")
         return _greedy_assignment(
             candidates, columns, reference_heights, position_spec, castellers, use_weight, shortage_factor
         )
@@ -671,12 +572,12 @@ def _exhaustive_assignment(
         total_combos *= len(combos)
     
     if total_combos > 1000000:
-        print(f"Warning: Search space too large ({total_combos:,}). Using greedy.")
+        logger.warning("Search space too large (%d combos); falling back to greedy", total_combos)
         return _greedy_assignment(
             candidates, columns, reference_heights, position_spec, castellers, use_weight, shortage_factor
         )
     
-    print(f"Evaluating {total_combos:,} possible assignments...")
+    logger.info("Evaluating %d possible assignments...", total_combos)
     
     # Search all assignments
     best_assignment = None
@@ -703,7 +604,7 @@ def _exhaustive_assignment(
             best_score = score
             best_assignment = dict(zip(column_names, assignment))
     
-    return best_assignment if best_assignment else {}
+    return (best_assignment if best_assignment else {}), stats
 
 def _score_complete_assignment(
     assignment: Dict[str, Tuple[str, ...]],
@@ -801,9 +702,49 @@ def _print_assignment_results(
     assignment: Dict[str, Tuple[str, ...]],
     position_spec: PositionRequirements,
     reference_heights: Dict[str, float],
-    castellers: pd.DataFrame
+    castellers: pd.DataFrame,
+    columns: Dict[str, int],
+    optimization_stats: Optional[Dict] = None
 ):
     """Print assignment results."""
+    
+    print(f"\n##### {position_spec.position_name.upper()} #####")
+    
+    # Print optimization progress if available (only for methods that tracked iterations)
+    if optimization_stats and optimization_stats.get('iterations', 0) > 0:
+        if 'iterations' in optimization_stats:
+            print(f"\nOptimization:")
+            print(f"{'iter':<8} {'best':<8}")
+            for milestone, score in optimization_stats.get('progress', []):
+                print(f"{milestone:<8} {score:<8.2f}")
+            
+            if 'stop_reason' in optimization_stats:
+                print(f"Stopped: {optimization_stats['stop_reason']}")
+            
+            print(f"Completed: {optimization_stats['iterations']} iterations  "
+                  f"score={optimization_stats['final_score']:.2f}  "
+                  f"initial={optimization_stats['initial_score']:.2f}")
+        
+        if optimization_stats.get('shortage', 0) > 0:
+            print(f"\nWARNING: shortage — {optimization_stats['shortage']} slots remain empty "
+                  f"({optimization_stats['shortage_pct']:.0f}%)")
+    
+    print(f"\nAssignments:")
+    
+    # For COLUMN_BALANCE, calculate and show balance metric
+    if position_spec.optimization_objective == OptimizationObjective.COLUMN_BALANCE:
+        column_totals = []
+        for col_name, assigned in assignment.items():
+            total = columns[col_name]
+            for name in assigned:
+                if name:
+                    h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                    total += h
+            column_totals.append(total)
+        
+        if len(column_totals) > 1:
+            balance = np.std(column_totals)
+            print(f"Balance: σ={balance:.1f} cm\n")
     
     for col_name, assigned in assignment.items():
         print(f"\n{col_name}:")
@@ -812,23 +753,26 @@ def _print_assignment_results(
             ref_height = reference_heights[col_name]
             min_target = ref_height * position_spec.height_ratio_min
             max_target = ref_height * position_spec.height_ratio_max
-            print(f"  Reference: {ref_height:.1f}cm")
-            print(f"  Target range: {min_target:.1f}-{max_target:.1f}cm")
+            print(f"  ref={ref_height:.1f} cm   target={min_target:.1f}–{max_target:.1f} cm")
         
         for i, name in enumerate(assigned, 1):
             if name:
                 casteller = castellers[castellers['Nom complet'] == name].iloc[0]
                 h = casteller['Alçada (cm)']
-                w = casteller.get('Pes (kg)', 'N/A')
-                
-                ratio_str = ""
+                flag = ""
                 if position_spec.reference_positions:
                     ratio = h / reference_heights[col_name]
-                    ratio_str = f" ({ratio:.1%} of reference)"
-                
-                weight_str = f" | Weight: {w:.1f}kg" if isinstance(w, (int, float)) else ""
-                
-                print(f"  {i}. {name}: {h:.0f}cm{ratio_str}{weight_str}")
+                    ratio_pct = ratio * 100
+                    
+                    # Check violations
+                    if ratio < position_spec.height_ratio_min:
+                        flag = " ⚠ (below target)"
+                    elif ratio > position_spec.height_ratio_max:
+                        flag = " ⚠ (above target)"
+                    
+                    print(f"    {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%{flag}")
+                else:
+                    print(f"  {name:<16} {h:3.0f} cm")
 
 
 def simulated_annealing_assignment(
@@ -842,8 +786,9 @@ def simulated_annealing_assignment(
     initial_temp: float = 100.0,
     cooling_rate: float = 0.95,
     iterations_per_temp: int = 100,
-    min_temp: float = 0.1
-) -> Dict[str, Tuple[str, ...]]:
+    min_temp: float = 0.1,
+    return_stats: bool = True
+) -> Tuple[Dict[str, Tuple[str, ...]], Dict]:
     """
     Simulated annealing assignment algorithm.
     
@@ -876,7 +821,7 @@ def simulated_annealing_assignment(
     # Check feasibility
     total_needed = len(column_names) * position_spec.count_per_column
     if len(candidate_names) < total_needed:
-        print(f"Warning: Not enough candidates. Using greedy.")
+        logger.warning("Not enough candidates; falling back to greedy")
         return _greedy_assignment(
             candidates, columns, reference_heights, position_spec, castellers, use_weight, shortage_factor
         )
@@ -894,11 +839,18 @@ def simulated_annealing_assignment(
     best_solution = current_solution.copy()
     best_score = current_score
     
+    # Track stats
+    stats = {
+        'initial_score': current_score,
+        'progress': [],
+        'iterations': 0
+    }
+    
     temperature = initial_temp
     iteration = 0
     total_iterations = 0
     
-    print(f"  Starting simulated annealing (initial score: {current_score:.2f})...")
+    logger.info("Starting simulated annealing (initial score: %.2f)", current_score)
     
     # Annealing loop
     while temperature > min_temp:
@@ -942,11 +894,15 @@ def simulated_annealing_assignment(
         
         # Progress report only every 1000 total iterations
         if total_iterations % 1000 == 0:
-            print(f"  Progress: {total_iterations} iterations, best={best_score:.2f}")
+            logger.info("Progress: %d iterations, best=%.2f", total_iterations, best_score)
+            stats['progress'].append((total_iterations, best_score))
     
-    print(f"  Completed in {total_iterations} iterations (score: {best_score:.2f})")
+    stats['iterations'] = total_iterations
+    stats['final_score'] = best_score
     
-    return best_solution
+    logger.info("Completed in %d iterations (score: %.2f)", total_iterations, best_score)
+    
+    return best_solution, stats
 
 
 def _generate_random_valid_assignment(
@@ -1061,23 +1017,21 @@ def adaptive_simulated_annealing_assignment(
     castellers: pd.DataFrame,
     use_weight: bool,
     shortage_factor: float = 1.0,
-    max_iterations: int = 5000
-) -> Dict[str, Tuple[str, ...]]:
+    max_iterations: int = 5000,
+    return_stats: bool = True
+) -> Tuple[Dict[str, Tuple[str, ...]], Dict]:
     """
     Simulated annealing with adaptive cooling schedule.
     
     Adjusts cooling rate based on acceptance rate - if we're accepting
     too many bad solutions, cool faster; if we're stuck, cool slower.
     """
-    import random
-    import math
-    
     column_names = list(columns.keys())
     candidate_names = list(candidates['Nom complet'])
     
     total_needed = len(column_names) * position_spec.count_per_column
     if len(candidate_names) < total_needed:
-        print(f"Warning: Not enough candidates. Using greedy.")
+        logger.warning("Not enough candidates; falling back to greedy")
         return _greedy_assignment(
             candidates, columns, reference_heights, position_spec, castellers, use_weight, shortage_factor
         )
@@ -1094,6 +1048,13 @@ def adaptive_simulated_annealing_assignment(
     best_solution = current_solution.copy()
     best_score = current_score
     
+    # Track stats
+    stats = {
+        'initial_score': current_score,
+        'progress': [],
+        'iterations': 0
+    }
+    
     # Adaptive temperature initialization
     # Run sample evaluations to estimate score variance
     sample_scores = []
@@ -1108,7 +1069,7 @@ def adaptive_simulated_annealing_assignment(
     # Set initial temperature to ~2x standard deviation of scores
     temperature = np.std(sample_scores) * 2
     
-    print(f"  Starting adaptive annealing (initial score: {current_score:.2f})...")
+    logger.info("Starting adaptive annealing (initial score: %.2f)", current_score)
     
     iteration = 0
     no_improvement_count = 0
@@ -1168,22 +1129,131 @@ def adaptive_simulated_annealing_assignment(
                 # Good range - normal cooling
                 temperature *= 0.9
             
-            # Only print progress every 1000 iterations
+            # Only log progress every 1000 iterations
             if iteration % 1000 == 0:
-                print(f"  Progress: {iteration} iterations, best={best_score:.2f}")
+                stats['progress'].append((iteration, best_score))
+                logger.info("Progress: %d iterations, best=%.2f", iteration, best_score)
             
             acceptance_count = 0
         
         # Stop if stuck for too long
         if no_improvement_count > 1000:
-            print(f"  No improvement for 1000 iterations - stopping early")
+            stats['stop_reason'] = 'no improvement (1000 iters)'
+            logger.info("No improvement for 1000 iterations - stopping early")
             break
         
         # Stop if temperature too low
         if temperature < 0.01:
-            print(f"  Temperature too low - stopping")
+            stats['stop_reason'] = 'temperature too low'
+            logger.info("Temperature too low - stopping")
             break
     
-    print(f"  Completed in {iteration} iterations (score: {best_score:.2f})")
+    stats['iterations'] = iteration
+    stats['final_score'] = best_score
     
-    return best_solution
+    logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
+    
+    return best_solution, stats
+
+def _calculate_reference_heights_for_queue(
+    queue_spec: 'QueueSpec',
+    depth: int,
+    all_assignments: Dict,
+    column_tronc_heights: Optional[Dict[str, Dict[str, int]]],
+    castellers: pd.DataFrame
+) -> float:
+    """Calculate reference height for a queue position at given depth.
+    
+    Parameters
+    ----------
+    queue_spec : QueueSpec
+        Queue specification
+    depth : int
+        Depth level (1-indexed)
+    all_assignments : dict
+        Current assignments
+    column_tronc_heights : dict
+        Tronc heights per column
+    castellers : pd.DataFrame
+        Casteller database
+        
+    Returns
+    -------
+    float
+        Reference height in cm
+    """
+    if depth == 1:
+        # Use baix + segon from column(s)
+        total = 0
+        for col in queue_spec.column_refs:
+            # Get baix height
+            baix_assignment = all_assignments.get('baix', {}).get(col)
+            if baix_assignment and baix_assignment[0]:
+                baix_data = castellers[castellers['Nom complet'] == baix_assignment[0]]
+                if not baix_data.empty:
+                    total += baix_data['Alçada (cm)'].iloc[0]
+            
+            # Get segon height
+            if column_tronc_heights and col in column_tronc_heights:
+                total += column_tronc_heights[col].get('segon', 175.0)
+        
+        return total / len(queue_spec.column_refs)  # Average for multi-column queues
+    else:
+        # Use previous depth in same queue
+        queue_type = queue_spec.queue_type
+        queue_id = queue_spec.queue_id
+        
+        if queue_type in all_assignments and queue_id in all_assignments[queue_type]:
+            prev_assignments = all_assignments[queue_type][queue_id]
+            if len(prev_assignments) >= depth - 1:
+                prev_assignment = prev_assignments[depth - 2]
+                if prev_assignment and prev_assignment[0]:
+                    prev_data = castellers[castellers['Nom complet'] == prev_assignment[0]]
+                    if not prev_data.empty:
+                        return prev_data['Alçada (cm)'].iloc[0]
+        
+        # Fallback
+        return 175.0
+
+
+def create_position_spec_from_queue(
+    queue_spec: 'QueueSpec',
+    depth: int
+) -> PositionRequirements:
+    """Create a PositionRequirements from a QueueSpec for a specific depth.
+    
+    Parameters
+    ----------
+    queue_spec : QueueSpec
+        Queue specification
+    depth : int
+        Depth level (1-indexed)
+        
+    Returns
+    -------
+    PositionRequirements
+        Position spec for this depth level
+    """
+    # Adjust height ratios for depth > 1
+    if depth == 1:
+        height_min = queue_spec.height_ratio_min
+        height_max = queue_spec.height_ratio_max
+    else:
+        # Subsequent depths: 80-100% of previous person
+        height_min = 0.80
+        height_max = 1.00
+    
+    return PositionRequirements(
+        position_name=f'{queue_spec.queue_type}_{queue_spec.queue_id}_depth{depth}',
+        expertise_keywords=queue_spec.expertise_keywords,
+        count_per_column=1,  # Always 1 per queue per depth
+        reference_positions=[],  # Handled by custom height calculation
+        height_ratio_min=height_min,
+        height_ratio_max=height_max,
+        optimization_objective=OptimizationObjective.HEIGHT_COMPLIANCE,
+        weight_preference=queue_spec.weight_preference,
+        height_weight=queue_spec.height_weight,
+        expertise_weight=queue_spec.expertise_weight,
+        similarity_weight=queue_spec.similarity_weight,
+        weight_factor=queue_spec.weight_factor
+    )

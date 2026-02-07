@@ -19,24 +19,24 @@ from typing import Dict, Tuple, Optional, Any, List
 import unicodedata
 import re
 import pandas as pd
+from .utils import get_logger
 
-# Core optimizer
-from .optimize import (
-    find_optimal_assignment,
-    POSITION_SPECS,
-)
+logger = get_logger(__name__)
 
-# Structural helpers (tronc / pinya definitions)
-from .castell import (
+from .optimize import find_optimal_assignment
+
+from .utils import (
     build_columns,
     compute_column_tronc_heights,
 )
 
-# Peripheral rows (mans, laterals, vents/daus, crosses, contraforts, agulles)
-from .optimize_rows import (
-    assign_rows_pipeline
+from .queue_assign import assign_rows_pipeline
+
+from .data import (
+    POSITION_SPECS
 )
 
+# Update build_castell_assignment() - replace column references
 
 def build_castell_assignment(
     castellers: pd.DataFrame,
@@ -45,70 +45,32 @@ def build_castell_assignment(
     use_weight: bool = True,
     all_assignments: Optional[Dict[str, Dict[str, tuple]]] = None,
 ) -> Dict[str, Dict]:
-    """
-    Build a full castell assignment from configuration and casteller data.
-
-    This patched version accepts an optional `all_assignments` dict containing
-    preassigned positions (partial or complete). The pipeline will preserve any
-    prefilled entries and fill only missing positions/columns.
-
-    Parameters
-    ----------
-    castellers : pd.DataFrame
-        Casteller database
-    castell_config : Dict[str,Any]
-        Configuration describing the castell. Expected keys:
-          - 'columns': column layout spec passed to build_columns
-          - 'tronc_positions': ordered list of tronc position names
-          - 'mans_rows': int, number of mans rows to generate
-          - peripheral flags like 'include_laterals'
-          - optional 'base_db_unavailable_flag'
-    optimization_method : str
-        Optimization backend to use (greedy, exhaustive, simulated_annealing)
-    use_weight : bool
-        Whether to include weight in the objective where supported
-    all_assignments : Optional[Dict[str,Dict[str,tuple]]]
-        Optional prefilled assignment map. The function updates this dict in
-        place and also returns it.
-
-    Returns
-    -------
-    Dict[str,Dict]
-        all_assignments: mapping position_name -> {column_name -> tuple(casteller_ids)}
-    """
-
-    # 1) Build columns and structural metadata
+    """Build castell assignment with new queue-based structure."""
+    
+    # Build columns with normalized names (Rengla/Plena/Buida)
     columns = build_columns(castell_config['columns'])
-
-    # Use or create the container for every assignment produced
+    
     if all_assignments is None:
         all_assignments = {}
-
-    # Ensure the dict has per-position maps present (for merging convenience)
+    
     for pos in castell_config['tronc_positions']:
         all_assignments.setdefault(pos, {})
-
-    # 2) Assign ONLY pinya-level tronc positions (baix only - the base of each column)
-    # Other tronc positions (segon, terç, quart, etc.) should be pre-assigned in all_assignments
-    # as they form the actual tower structure
-    pinya_tronc_positions = ['baix']  # Only baix needs optimization for column balance
+    
+    # Assign pinya-level tronc (baix only)
+    pinya_tronc_positions = ['baix']
     
     for position_name in pinya_tronc_positions:
         if position_name not in castell_config['tronc_positions']:
             continue
-        # Skip columns that are already assigned in the provided all_assignments
+        
         already_assigned_columns = set(all_assignments.get(position_name, {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments[position_name].get(c)]
-
+        
         if not missing_columns:
-            # position fully preassigned — nothing to do
             continue
-
-        # If we have a spec for this position, compute assignments for missing columns
+        
         if position_name in POSITION_SPECS:
             spec = POSITION_SPECS[position_name]
-
-            # Request an assignment for the whole set of columns, then merge only missing columns
             computed_assignment = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=spec,
@@ -118,29 +80,24 @@ def build_castell_assignment(
                 optimization_method=optimization_method,
                 use_weight=use_weight
             )
-
-            # Merge: preserve existing values, fill missing columns from computed_assignment
+            
             all_assignments.setdefault(position_name, {})
             for col_name, value in computed_assignment.items():
                 if col_name not in all_assignments[position_name] or not all_assignments[position_name].get(col_name):
                     all_assignments[position_name][col_name] = value
         else:
-            # No spec available: cannot compute missing columns — require caller to prefill
             raise ValueError(
-                f"Missing POSITION_SPECS entry for '{position_name}', and the following columns are still unfilled: {missing_columns}. "
-                "Provide preassigned values for these columns or add a POSITION_SPECS entry."
+                f"Missing POSITION_SPECS entry for '{position_name}', unfilled columns: {missing_columns}"
             )
-
-    # 2a) Assign crosses immediately after tronc positions (strategic building requirement)
+    
+    # Assign crosses
     if 'crossa' in POSITION_SPECS:
         all_assignments.setdefault('crossa', {})
-        
         already_assigned_columns = set(all_assignments.get('crossa', {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments['crossa'].get(c)]
-
+        
         if missing_columns:
             crossa_spec = POSITION_SPECS['crossa']
-            
             computed_crossa_assignment = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=crossa_spec,
@@ -150,22 +107,19 @@ def build_castell_assignment(
                 optimization_method=optimization_method,
                 use_weight=use_weight
             )
-
-            # Merge: preserve existing values, fill missing columns from computed assignment
+            
             for col_name, value in computed_crossa_assignment.items():
                 if col_name not in all_assignments['crossa'] or not all_assignments['crossa'].get(col_name):
                     all_assignments['crossa'][col_name] = value
-
-    # 2b) Assign contrafort after crossa
+    
+    # Assign contrafort
     if 'contrafort' in POSITION_SPECS:
         all_assignments.setdefault('contrafort', {})
-        
         already_assigned_columns = set(all_assignments.get('contrafort', {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments['contrafort'].get(c)]
-
+        
         if missing_columns:
             contrafort_spec = POSITION_SPECS['contrafort']
-            
             computed_contrafort_assignment = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=contrafort_spec,
@@ -175,29 +129,26 @@ def build_castell_assignment(
                 optimization_method=optimization_method,
                 use_weight=use_weight
             )
-
+            
             for col_name, value in computed_contrafort_assignment.items():
                 if col_name not in all_assignments['contrafort'] or not all_assignments['contrafort'].get(col_name):
                     all_assignments['contrafort'][col_name] = value
-
-    # 3) Compute per-column tronc heights (used by mans / laterals / agulles)
-    # This must happen AFTER we have all tronc positions (either pre-assigned or computed)
-    # Pass the castellers DataFrame so we can get actual heights
+    
+    # Compute tronc heights
     column_tronc_heights = compute_column_tronc_heights(
-        all_assignments, 
+        all_assignments,
         castell_config['tronc_positions'],
-        castellers  # Add castellers parameter
+        castellers
     )
-    # 4) Peripheral rows in the specified order — apply filtering before
+    
+    # Assign agulles
     if 'agulla' in POSITION_SPECS:
         all_assignments.setdefault('agulla', {})
-        
         already_assigned_columns = set(all_assignments.get('agulla', {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments['agulla'].get(c)]
-
+        
         if missing_columns:
             agulla_spec = POSITION_SPECS['agulla']
-            
             computed_agulla_assignment = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=agulla_spec,
@@ -207,132 +158,134 @@ def build_castell_assignment(
                 optimization_method=optimization_method,
                 use_weight=use_weight
             )
-
+            
             for col_name, value in computed_agulla_assignment.items():
                 if col_name not in all_assignments['agulla'] or not all_assignments['agulla'].get(col_name):
                     all_assignments['agulla'][col_name] = value
     
-    # 5) Peripheral rows: mans, daus, laterals (in that order per building strategy)
-    assign_rows_pipeline(
+    
+    peripheral_stats = assign_rows_pipeline(
         castellers=castellers,
         columns=columns,
         column_tronc_heights=column_tronc_heights,
         all_assignments=all_assignments,
         mans_rows=castell_config.get('mans_rows', 2),
         include_laterals=castell_config.get('include_laterals', True),
-        include_daus=castell_config.get('include_daus', True),
-        include_crosses=False,  # Already assigned above
-        include_contraforts=False,  # Already assigned above
-        include_agulles=False,  # Already assigned above
+        include_daus=castell_config.get('include_daus', True)
     )
-
-    # Validate structure before returning
+    
+    # Print summaries
+    _print_queue_summary(all_assignments, castellers)
+    
+    # Validate
     errors, warnings = validate_structure(all_assignments, columns)
     
     if errors:
-        print("\n" + "="*60)
-        print("CRITICAL STRUCTURAL ERRORS:")
+        logger.error("="*60)
+        logger.error("CRITICAL STRUCTURAL ERRORS:")
         for err in errors:
-            print(f"  ❌ {err}")
-        print("="*60)
+            logger.error("✗ %s", err)
+        logger.error("="*60)
     
     if warnings:
-        print("\nWarnings:")
+        logger.warning("Warnings:")
         for warn in warnings:
-            print(f"  ⚠️  {warn}")
+            logger.warning("⚠️ %s", warn)
     
     return all_assignments
 
 
-def validate_structure(all_assignments: Dict[str, Dict[str, tuple]], columns: Dict[str, int]) -> tuple[List[str], List[str]]:
-    """Validate completed castell structure for critical safety issues.
+def _print_queue_summary(all_assignments: Dict, castellers: pd.DataFrame):
+    """Print formatted summary of queue assignments."""
     
-    Parameters:
-        all_assignments: Complete assignment dict
-        columns: Column definitions
+    for queue_type in ['mans', 'daus', 'laterals']:
+        if queue_type not in all_assignments:
+            continue
         
-    Returns:
-        tuple: (errors, warnings) lists
-    """
+        print(f"\n##### {queue_type.upper()} #####")
+        
+        for queue_id, depth_list in all_assignments[queue_type].items():
+            print(f"\n{queue_id}:")
+            
+            for depth_idx, assignment in enumerate(depth_list, start=1):
+                if assignment and assignment[0]:
+                    name = assignment[0]
+                    h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                    print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm")
+                else:
+                    print(f"  Depth {depth_idx}: [empty]")
+
+
+def validate_structure(all_assignments: Dict[str, Dict], columns: Dict[str, float]) -> Tuple[List[str], List[str]]:
+    """Validate completed castell structure."""
     errors = []
     warnings = []
     
-    # Check critical positions are filled in ALL columns
+    # Check critical positions
     for col_name in columns.keys():
-        # Baix (base) - absolutely critical for safety
+        # Baix
         if 'baix' in all_assignments:
             baix_assignments = all_assignments['baix'].get(col_name, ())
             baix_count = len([c for c in baix_assignments if c])
             if baix_count == 0:
-                errors.append(f"Column {col_name} missing baix (load bearer - CRITICAL)")
-            elif baix_count < 1:
-                warnings.append(f"Column {col_name} has insufficient baix assignments: {baix_count}")
+                errors.append(f"Column {col_name} missing baix (CRITICAL)")
         
-        # Crossa (cross support) - important for stability
+        # Crossa
         if 'crossa' in all_assignments:
             crossa_assignments = all_assignments['crossa'].get(col_name, ())
             crossa_count = len([c for c in crossa_assignments if c])
-            if crossa_count == 0:
-                warnings.append(f"Column {col_name} missing crossa (cross support)")
-            elif crossa_count < 2:
-                warnings.append(f"Column {col_name} has insufficient crossa support: {crossa_count} (recommended: 2)")
+            if crossa_count < 2:
+                warnings.append(f"Column {col_name} has {crossa_count} crossa (recommended: 2)")
         
-        # Contrafort (buttress) - lateral stability
+        # Contrafort
         if 'contrafort' in all_assignments:
             contrafort_assignments = all_assignments['contrafort'].get(col_name, ())
             contrafort_count = len([c for c in contrafort_assignments if c])
             if contrafort_count == 0:
-                warnings.append(f"Column {col_name} missing contrafort (lateral support)")
+                warnings.append(f"Column {col_name} missing contrafort")
         
-        # Agulla (needle/pillar) - central support
+        # Agulla
         if 'agulla' in all_assignments:
             agulla_assignments = all_assignments['agulla'].get(col_name, ())
             agulla_count = len([c for c in agulla_assignments if c])
             if agulla_count == 0:
-                errors.append(f"Column {col_name} missing agulla (CRITICAL - castell cannot be safely built)")
-
-        # Primeres mans - critical per manual §7.1
-        if 'primeres_mans' in all_assignments:
-            pm_assignments = all_assignments['primeres_mans'].get(col_name, ())
-            pm_count = len([c for c in pm_assignments if c])
-            if pm_count == 0:
-                errors.append(f"Column {col_name} missing primeres mans (CRITICAL)")
-        
-        # Check for empty assignments in positions that should have castellers
-        for position_name, assignments in all_assignments.items():
-            if position_name in ['baix', 'segon', 'terç', 'quart', 'cinquè']:  # Core tronc
-                col_assignments = assignments.get(col_name, ())
-                empty_slots = len([c for c in col_assignments if not c])
-                if empty_slots > 0:
-                    total_slots = len(col_assignments)
-                    warnings.append(f"Column {col_name} {position_name}: {empty_slots}/{total_slots} slots empty")
+                errors.append(f"Column {col_name} missing agulla (CRITICAL)")
     
-    # Check total structure integrity
+    # Check queue balance
+    for queue_type in ['mans', 'daus', 'laterals']:
+        if queue_type not in all_assignments:
+            continue
+        
+        depths = []
+        for queue_id, depth_list in all_assignments[queue_type].items():
+            filled_depth = len([d for d in depth_list if d and d[0]])
+            depths.append(filled_depth)
+        
+        if depths:
+            variance = max(depths) - min(depths)
+            if variance > 1:
+                warnings.append(f"{queue_type} queue imbalance: variance={variance} (max=1)")
+    
+    # Check duplicates
     from collections import Counter
     all_assigned_ids = []
-    for pos_assignments in all_assignments.values():
-        for col_assignments in pos_assignments.values():
-            if col_assignments:
-                all_assigned_ids.extend(c for c in col_assignments if c)
+    
+    for pos_name, pos_data in all_assignments.items():
+        if pos_name in ['mans', 'daus', 'laterals']:
+            # Queue structure
+            for queue_id, depth_list in pos_data.items():
+                for assignment in depth_list:
+                    if assignment and assignment[0]:
+                        all_assigned_ids.append(assignment[0])
+        else:
+            # Standard structure
+            for col_assignments in pos_data.values():
+                if col_assignments:
+                    all_assigned_ids.extend(c for c in col_assignments if c)
+    
     duplicates = [c for c, count in Counter(all_assigned_ids).items() if count > 1]
     if duplicates:
-        errors.append(f"Duplicate assignments (each casteller must appear at most once): {duplicates}")
-
-    # Check total structure integrity
-    assigned_columns = set()
-    for position_name, assignments in all_assignments.items():
-        for col_name, col_assignments in assignments.items():
-            if col_assignments and any(c for c in col_assignments):
-                assigned_columns.add(col_name)
-    
-    # Check if any columns are completely empty
-    empty_columns = set(columns.keys()) - assigned_columns
-    if empty_columns:
-        errors.append(f"Completely empty columns: {', '.join(sorted(empty_columns))}")
-    
-    # Check minimum column count for safety
-    if len(assigned_columns) < 2:
-        errors.append(f"Insufficient columns for stable structure: {len(assigned_columns)} (minimum: 2)")
+        errors.append(f"Duplicate assignments: {duplicates}")
     
     return errors, warnings
 
@@ -493,50 +446,52 @@ def apply_preassigned_to_all_assignments(
                 resolved = resolve_name_to_id(castellers, str(name), name_col=name_col, id_col=id_col)
                 resolved_ids.append(resolved)
 
-            # Set assignment for this column
-            all_assignments[pos][colname] = tuple(resolved_ids)
-
-            # Mark assigned in the castellers DataFrame. We need to mark by id_col values
-            if id_col is not None and id_col in castellers.columns:
-                castellers.loc[castellers[id_col].isin(resolved_ids), assigned_flag_col] = True
-            else:
-                # resolved_ids are DataFrame indices
-                castellers.loc[castellers.index.isin(resolved_ids), assigned_flag_col] = True
-
-
-# --- Existing helpers below (unchanged) ---
-
-def filter_available_castellers(castellers, all_assignments, base_db_unavailable_flag: Optional[str] = None):
-    """Return a filtered DataFrame of castellers excluding those already assigned
-    in all_assignments and those flagged as unavailable in the base database.
-
-    CRITICAL FIX: all_assignments contains NAMES (str), not IDs. We must filter by name.
-    
-    - castellers: pd.DataFrame with casteller data
-    - all_assignments: mapping position_name -> {column -> tuple(names)}
-    - base_db_unavailable_flag: optional column name in castellers that if True/1 means not attending
-    """
-    # Collect assigned NAMES (not IDs)
-    assigned_names = set()
-    for pos_map in all_assignments.values():
-        for col, tpl in pos_map.items():
-            if tpl is None:
-                continue
-            for name in tpl:
-                if name is None:
-                    continue
-                # Handle mixed content: some entries might be IDs, others names
-                if isinstance(name, str):
-                    assigned_names.add(name)
+            # Map resolved ids/indices back to the canonical name (name_col) for storage
+            resolved_names: List[str] = []
+            for rid in resolved_ids:
+                name_to_store = None
+                # If resolver returned a string, assume it's already a name
+                if isinstance(rid, str):
+                    name_to_store = rid
                 else:
-                    # Convert non-string to string for safety
-                    assigned_names.add(str(name))
+                    # Try id_col lookup first (preferred)
+                    if id_col is not None and id_col in castellers.columns:
+                        matches = castellers[castellers[id_col] == rid]
+                        if not matches.empty:
+                            name_to_store = matches[name_col].iloc[0]
+                    # Fallback: treat rid as DataFrame index
+                    if name_to_store is None:
+                        try:
+                            matches = castellers.loc[[rid]]
+                            if not matches.empty:
+                                name_to_store = matches[name_col].iloc[0]
+                        except Exception:
+                            name_to_store = None
 
-    # Filter by name (not ID)
-    df = castellers[~castellers['Nom complet'].isin(assigned_names)]
+                # As a last resort, stringize the resolved value
+                if name_to_store is None:
+                    name_to_store = str(rid)
 
-    if base_db_unavailable_flag is not None and base_db_unavailable_flag in df.columns:
-        df = df[~df[base_db_unavailable_flag].astype(bool)]
+                resolved_names.append(name_to_store)
 
-    return df
+            # Store canonical names in all_assignments so downstream filters can
+            # always compare against the `Nom complet` column.
+            all_assignments[pos][colname] = tuple(resolved_names)
 
+            # Mark assigned in the castellers DataFrame. Prefer marking by id
+            # where available, but also mark by name for any string-resolved values.
+            if id_col is not None and id_col in castellers.columns:
+                id_values = [r for r in resolved_ids if not isinstance(r, str)]
+                if id_values:
+                    castellers.loc[castellers[id_col].isin(id_values), assigned_flag_col] = True
+                name_values = [r for r in resolved_ids if isinstance(r, str)]
+                if name_values:
+                    castellers.loc[castellers[name_col].isin(name_values), assigned_flag_col] = True
+            else:
+                # No id_col: resolved_ids should be DataFrame indices or names
+                idx_values = [r for r in resolved_ids if not isinstance(r, str)]
+                if idx_values:
+                    castellers.loc[castellers.index.isin(idx_values), assigned_flag_col] = True
+                name_values = [r for r in resolved_ids if isinstance(r, str)]
+                if name_values:
+                    castellers.loc[castellers[name_col].isin(name_values), assigned_flag_col] = True
