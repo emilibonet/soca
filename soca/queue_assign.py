@@ -30,7 +30,7 @@ def assign_queue_positions(
 ) -> Dict[str, List[Tuple[str, ...]]]:
     """Assign queue positions using breadth-first fill."""
     
-    logger.info("=== %s QUEUES ===", queue_type.upper())
+    logger.info("Assigning %s QUEUES", queue_type.upper())
     
     # Initialize queue structure
     if queue_type not in all_assignments:
@@ -125,7 +125,7 @@ def assign_queue_positions(
         depth += 1
     
     # Summary
-    logger.info("\n%s Summary:", queue_type.upper())
+    logger.info("%s Summary:", queue_type.upper())
     for queue_id in queue_specs.keys():
         filled = len([d for d in all_assignments[queue_type][queue_id] if d and d[0]])
         total = len(all_assignments[queue_type][queue_id])
@@ -138,26 +138,33 @@ def assign_rows_pipeline(
     columns: Dict[str, float],
     column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
     all_assignments: Dict[str, Dict],
-    mans_rows: int = 3,
+    mans: int = 3,
+    daus: int = 3,
+    laterals: int = 5,
     include_laterals: bool = True,
-    include_daus: bool = True
+    include_daus: bool = True,
+    include_mans: bool = True
 ):
     """Pipeline for assigning queue-based positions.
-    
+
     Order: mans → daus → laterals (with remaining castellers)
+    Accepts explicit depths for each queue type: `mans`, `daus`, `laterals`.
     """
     result = {}
     stats = {}
     
     # 1. Mans queues
-    result['mans'] = assign_queue_positions(
-        queue_type='mans',
-        queue_specs=MANS_QUEUE_SPECS,
-        max_depth=mans_rows,
-        castellers=castellers,
-        column_tronc_heights=column_tronc_heights,
-        all_assignments=all_assignments,
-    )
+    if include_mans:
+        result['mans'] = assign_queue_positions(
+            queue_type='mans',
+            queue_specs=MANS_QUEUE_SPECS,
+            max_depth=mans,
+            castellers=castellers,
+            column_tronc_heights=column_tronc_heights,
+            all_assignments=all_assignments,
+        )
+    else:
+        result['mans'] = {}
     
     remaining = filter_available_castellers(castellers, all_assignments)
     stats['remaining_after_mans'] = {'total': len(remaining)}
@@ -167,7 +174,7 @@ def assign_rows_pipeline(
         result['daus'] = assign_queue_positions(
             queue_type='daus',
             queue_specs=DAUS_QUEUE_SPECS,
-            max_depth=mans_rows,
+            max_depth=daus,
             castellers=castellers,
             column_tronc_heights=column_tronc_heights,
             all_assignments=all_assignments,
@@ -178,9 +185,10 @@ def assign_rows_pipeline(
     
     # 3. Laterals (use all remaining)
     if include_laterals:
+        # Use explicit laterals depth if provided, otherwise compute from remaining
         remaining = filter_available_castellers(castellers, all_assignments)
-        auto_depth = max(1, len(remaining) // len(LATERALS_QUEUE_SPECS))
-        
+        auto_depth = laterals if laterals is not None else max(1, len(remaining) // len(LATERALS_QUEUE_SPECS))
+
         result['laterals'] = assign_queue_positions(
             queue_type='laterals',
             queue_specs=LATERALS_QUEUE_SPECS,

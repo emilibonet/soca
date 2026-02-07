@@ -59,38 +59,28 @@ def load(path: str, class_map: dict):
     return obj
 
 
-def build_columns(columns_config: Dict[str, Any]) -> Dict[str, float]:
+def build_columns(columns_config) -> Dict[str, float]:
     """
     Convert column layout configuration to base heights for each column.
-    
-    Parameters
-    ----------
-    columns_config : dict
-        Column layout specification where keys are column names (R/Rengla, P/Plena, B/Buida)
-        and values indicate structural type or number of baixos.
-    
-    Returns
-    -------
-    dict
-        Mapping of column names to base heights in centimeters.
-        Uses standardized names: 'Rengla', 'Plena', 'Buida'
+
+    Accepts either the legacy dict form (name->num_baixos) or the new
+    simplified list form: ["Rengla", "Plena", "Buida"]. Returns a mapping
+    of normalized column names to base heights in centimeters.
     """
     COLUMN_BASE_HEIGHTS = {
         1: 175,
         2: 180,
         3: 185,
     }
-    
+
+    # Modifiers keyed by normalized full names
     COLUMN_TYPE_MODIFIERS = {
-        "R": 1.00,
         "Rengla": 1.00,
-        "P": 1.00,
         "Plena": 1.00,
-        "B": 0.95,
         "Buida": 0.95,
     }
-    
-    # Normalize column names to full names
+
+    # Map short codes to full names
     COLUMN_NAME_MAP = {
         "R": "Rengla",
         "P": "Plena",
@@ -99,26 +89,35 @@ def build_columns(columns_config: Dict[str, Any]) -> Dict[str, float]:
         "Plena": "Plena",
         "Buida": "Buida",
     }
-    
-    result = {}
-    
-    for col_name, col_value in columns_config.items():
-        # Normalize name
+
+    result: Dict[str, float] = {}
+
+    # Support list input: treat each element as a column name with 1 baix
+    if isinstance(columns_config, list):
+        iterable = [(c, 1) for c in columns_config]
+    elif isinstance(columns_config, dict):
+        iterable = list(columns_config.items())
+    else:
+        raise ValueError("columns_config must be a list or dict of column names")
+
+    for col_name, col_value in iterable:
         normalized_name = COLUMN_NAME_MAP.get(col_name, col_name)
-        
-        # Determine base height
+
+        # Determine number of baixos (default 1)
+        num_baixos = 1
         if isinstance(col_value, (int, float)):
-            num_baixos = int(col_value)
-            base_height = COLUMN_BASE_HEIGHTS.get(num_baixos, 175)
-        else:
-            base_height = 175
-        
-        # Apply modifier
-        modifier = COLUMN_TYPE_MODIFIERS.get(col_name, 1.0)
+            try:
+                num_baixos = int(col_value)
+            except Exception:
+                num_baixos = 1
+
+        base_height = COLUMN_BASE_HEIGHTS.get(num_baixos, 175)
+
+        modifier = COLUMN_TYPE_MODIFIERS.get(normalized_name, 1.0)
         final_height = base_height * modifier
-        
+
         result[normalized_name] = round(final_height, 1)
-    
+
     return result
 
 

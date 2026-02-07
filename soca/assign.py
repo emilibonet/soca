@@ -91,7 +91,8 @@ def build_castell_assignment(
             )
     
     # Assign crosses
-    if 'crossa' in POSITION_SPECS:
+    include_crossa = castell_config.get('include_crossa', True)
+    if include_crossa and 'crossa' in POSITION_SPECS:
         all_assignments.setdefault('crossa', {})
         already_assigned_columns = set(all_assignments.get('crossa', {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments['crossa'].get(c)]
@@ -113,7 +114,8 @@ def build_castell_assignment(
                     all_assignments['crossa'][col_name] = value
     
     # Assign contrafort
-    if 'contrafort' in POSITION_SPECS:
+    include_contraforts = castell_config.get('include_contraforts', True)
+    if include_contraforts and 'contrafort' in POSITION_SPECS:
         all_assignments.setdefault('contrafort', {})
         already_assigned_columns = set(all_assignments.get('contrafort', {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments['contrafort'].get(c)]
@@ -142,7 +144,8 @@ def build_castell_assignment(
     )
     
     # Assign agulles
-    if 'agulla' in POSITION_SPECS:
+    include_agulles = castell_config.get('include_agulles', True)
+    if include_agulles and 'agulla' in POSITION_SPECS:
         all_assignments.setdefault('agulla', {})
         already_assigned_columns = set(all_assignments.get('agulla', {}).keys())
         missing_columns = [c for c in columns.keys() if c not in already_assigned_columns or not all_assignments['agulla'].get(c)]
@@ -169,13 +172,26 @@ def build_castell_assignment(
         columns=columns,
         column_tronc_heights=column_tronc_heights,
         all_assignments=all_assignments,
-        mans_rows=castell_config.get('mans_rows', 2),
+        mans=castell_config.get('mans', 3),
+        daus=castell_config.get('daus', 3),
+        laterals=castell_config.get('laterals', 5),
         include_laterals=castell_config.get('include_laterals', True),
-        include_daus=castell_config.get('include_daus', True)
+        include_daus=castell_config.get('include_daus', True),
+        include_mans=castell_config.get('include_mans', True)
     )
     
-    # Print summaries
-    _print_queue_summary(all_assignments, castellers)
+    # Print final assignments report
+    logger.info("\n" + "="*60)
+    logger.info("# FINAL ASSIGNMENTS")
+    logger.info("="*60)
+    
+    # Print tronc position assignments first (structural order)
+    for pos in ['baix', 'crossa', 'contrafort', 'agulla']:
+        if pos in all_assignments:
+            _print_tronc_assignment(pos, all_assignments, columns, column_tronc_heights, castellers)
+
+    # Then print queue summaries in requested order
+    _print_queue_summary(all_assignments, castellers, columns, column_tronc_heights)
     
     # Validate
     errors, warnings = validate_structure(all_assignments, columns)
@@ -195,25 +211,108 @@ def build_castell_assignment(
     return all_assignments
 
 
-def _print_queue_summary(all_assignments: Dict, castellers: pd.DataFrame):
-    """Print formatted summary of queue assignments."""
-    
+def _print_queue_summary(
+    all_assignments: Dict,
+    castellers: pd.DataFrame,
+    columns: Dict[str, float],
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]]
+):
+    """Print formatted summary of queue assignments with reference/target info."""
+    from .data import MANS_QUEUE_SPECS, DAUS_QUEUE_SPECS, LATERALS_QUEUE_SPECS
+    from .optimize import _calculate_reference_heights_for_queue
+
+    queue_mappings = {
+        'mans': MANS_QUEUE_SPECS,
+        'daus': DAUS_QUEUE_SPECS,
+        'laterals': LATERALS_QUEUE_SPECS,
+    }
+
     for queue_type in ['mans', 'daus', 'laterals']:
         if queue_type not in all_assignments:
             continue
-        
+
+        queue_specs = queue_mappings.get(queue_type, {})
+
         print(f"\n##### {queue_type.upper()} #####")
-        
+
         for queue_id, depth_list in all_assignments[queue_type].items():
             print(f"\n{queue_id}:")
-            
+
             for depth_idx, assignment in enumerate(depth_list, start=1):
+                # Compute reference and target where possible
+                queue_spec = queue_specs.get(queue_id)
+                ref_info = None
+                if queue_spec is not None:
+                    ref_height = _calculate_reference_heights_for_queue(
+                        queue_spec, depth_idx, all_assignments, column_tronc_heights, castellers
+                    )
+                    min_target = ref_height * queue_spec.height_ratio_min
+                    max_target = ref_height * queue_spec.height_ratio_max
+                    ref_info = (ref_height, min_target, max_target)
+
                 if assignment and assignment[0]:
                     name = assignment[0]
                     h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
-                    print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm")
+                    if ref_info:
+                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm")
+                    else:
+                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm")
                 else:
-                    print(f"  Depth {depth_idx}: [empty]")
+                    if ref_info:
+                        print(f"  Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm")
+                    else:
+                        print(f"  Depth {depth_idx}: [empty]")
+
+
+def _print_tronc_assignment(
+    position_name: str,
+    all_assignments: Dict,
+    columns: Dict[str, float],
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
+    castellers: pd.DataFrame
+):
+    """Print tronc position assignments."""
+    from .data import POSITION_SPECS
+    
+    if position_name not in POSITION_SPECS:
+        return
+    
+    position_spec = POSITION_SPECS[position_name]
+    
+    # Calculate reference heights if needed; for positions without explicit
+    # reference_positions (e.g., 'baix') use `columns` as reference heights.
+    from .optimize import _calculate_reference_heights
+    if position_spec.reference_positions:
+        reference_heights = _calculate_reference_heights(
+            columns, 
+            position_spec.reference_positions,
+            all_assignments,
+            column_tronc_heights,
+            castellers
+        )
+    else:
+        # Use column base heights as the reference for positions like 'baix'
+        reference_heights = {col: float(h) for col, h in columns.items()}
+    
+    print(f"\n##### {position_name.upper()} #####")
+    
+    for col_name, assigned in all_assignments[position_name].items():
+        print(f"\n{col_name}:")
+        
+        if reference_heights and col_name in reference_heights:
+            ref_height = reference_heights[col_name]
+            min_target = ref_height * position_spec.height_ratio_min
+            max_target = ref_height * position_spec.height_ratio_max
+            print(f"  ref={ref_height:.1f} cm   target={min_target:.1f}–{max_target:.1f} cm")
+        
+        for i, name in enumerate(assigned, 1):
+            if name:
+                h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                if reference_heights:
+                    ratio_pct = (h / reference_heights[col_name]) * 100
+                    print(f"    {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%")
+                else:
+                    print(f"  {name:<16} {h:3.0f} cm")
 
 
 def validate_structure(all_assignments: Dict[str, Dict], columns: Dict[str, float]) -> Tuple[List[str], List[str]]:
@@ -395,7 +494,7 @@ def apply_preassigned_to_all_assignments(
     all_assignments: Dict[str, Dict[str, Tuple[Any, ...]]],
     name_col: str = 'Nom complet',
     id_col: Optional[str] = None,
-    assigned_flag_col: str = 'assigned',
+    assigned_flag_col: str = 'assignat',
 ) -> None:
     """Apply preassigned layout (by names) to `all_assignments` in-place.
 

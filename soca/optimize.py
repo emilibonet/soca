@@ -42,8 +42,6 @@ def find_optimal_assignment(
     Returns:
         Dict mapping column names to tuples of assigned casteller names
     """
-    logger.info("=== %s ===", position_spec.position_name.upper())
-    
     # Funnel diagnostics - track the filtering process
     total_in_db = len(castellers)
     already_assigned = len(_get_all_assigned_castellers(previous_assignments))
@@ -54,6 +52,9 @@ def find_optimal_assignment(
     # Get candidates with expertise (strict filtering)
     candidates_expertise = _get_valid_candidates(castellers, position_spec, allow_relaxed=False, requested_count=requested)
     expertise_count = len(candidates_expertise)
+    
+    # Print assignment header
+    logger.info("Assigning %s", position_spec.position_name.upper())
     
     # Filter out already assigned castellers
     all_assigned = _get_all_assigned_castellers(previous_assignments)
@@ -102,9 +103,6 @@ def find_optimal_assignment(
         castellers
     )
     
-    # Track optimization stats
-    optimization_stats = {'method': optimization_method}
-
     # 4. Run optimization
     if optimization_method == 'exhaustive':
         assignment, stats = _exhaustive_assignment(
@@ -129,18 +127,12 @@ def find_optimal_assignment(
     else:
         raise ValueError(f"Unknown optimization method: {optimization_method}")
     
-    # Merge stats and compute shortage info
-    optimization_stats.update(stats)
-    optimization_stats['shortage'] = shortage if available_count < requested else 0
-    optimization_stats['shortage_pct'] = (shortage / requested * 100) if available_count < requested else 0
-    
-    # 5. Print results
-    _print_assignment_results(
-        assignment, position_spec, reference_heights, castellers,
-        columns, optimization_stats
-    )
-    
+    logger.info("")  # Blank line after optimization
+
     if return_stats:
+        optimization_stats = {'method': optimization_method, **stats}
+        optimization_stats['shortage'] = shortage if available_count < requested else 0
+        optimization_stats['shortage_pct'] = (shortage / requested * 100) if available_count < requested else 0
         return assignment, optimization_stats
     return assignment
 
@@ -698,81 +690,7 @@ def _score_complete_assignment(
     
     return total_score
 
-def _print_assignment_results(
-    assignment: Dict[str, Tuple[str, ...]],
-    position_spec: PositionRequirements,
-    reference_heights: Dict[str, float],
-    castellers: pd.DataFrame,
-    columns: Dict[str, int],
-    optimization_stats: Optional[Dict] = None
-):
-    """Print assignment results."""
-    
-    print(f"\n##### {position_spec.position_name.upper()} #####")
-    
-    # Print optimization progress if available (only for methods that tracked iterations)
-    if optimization_stats and optimization_stats.get('iterations', 0) > 0:
-        if 'iterations' in optimization_stats:
-            print(f"\nOptimization:")
-            print(f"{'iter':<8} {'best':<8}")
-            for milestone, score in optimization_stats.get('progress', []):
-                print(f"{milestone:<8} {score:<8.2f}")
-            
-            if 'stop_reason' in optimization_stats:
-                print(f"Stopped: {optimization_stats['stop_reason']}")
-            
-            print(f"Completed: {optimization_stats['iterations']} iterations  "
-                  f"score={optimization_stats['final_score']:.2f}  "
-                  f"initial={optimization_stats['initial_score']:.2f}")
-        
-        if optimization_stats.get('shortage', 0) > 0:
-            print(f"\nWARNING: shortage — {optimization_stats['shortage']} slots remain empty "
-                  f"({optimization_stats['shortage_pct']:.0f}%)")
-    
-    print(f"\nAssignments:")
-    
-    # For COLUMN_BALANCE, calculate and show balance metric
-    if position_spec.optimization_objective == OptimizationObjective.COLUMN_BALANCE:
-        column_totals = []
-        for col_name, assigned in assignment.items():
-            total = columns[col_name]
-            for name in assigned:
-                if name:
-                    h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
-                    total += h
-            column_totals.append(total)
-        
-        if len(column_totals) > 1:
-            balance = np.std(column_totals)
-            print(f"Balance: σ={balance:.1f} cm\n")
-    
-    for col_name, assigned in assignment.items():
-        print(f"\n{col_name}:")
-        
-        if position_spec.reference_positions:
-            ref_height = reference_heights[col_name]
-            min_target = ref_height * position_spec.height_ratio_min
-            max_target = ref_height * position_spec.height_ratio_max
-            print(f"  ref={ref_height:.1f} cm   target={min_target:.1f}–{max_target:.1f} cm")
-        
-        for i, name in enumerate(assigned, 1):
-            if name:
-                casteller = castellers[castellers['Nom complet'] == name].iloc[0]
-                h = casteller['Alçada (cm)']
-                flag = ""
-                if position_spec.reference_positions:
-                    ratio = h / reference_heights[col_name]
-                    ratio_pct = ratio * 100
-                    
-                    # Check violations
-                    if ratio < position_spec.height_ratio_min:
-                        flag = " ⚠ (below target)"
-                    elif ratio > position_spec.height_ratio_max:
-                        flag = " ⚠ (above target)"
-                    
-                    print(f"    {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%{flag}")
-                else:
-                    print(f"  {name:<16} {h:3.0f} cm")
+
 
 
 def simulated_annealing_assignment(

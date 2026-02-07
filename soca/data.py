@@ -8,7 +8,7 @@ warnings.filterwarnings(
 import os
 import pygsheets
 import pandas as pd
-from typing import List
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 from dotenv import load_dotenv
@@ -75,7 +75,7 @@ MANS_QUEUE_SPECS = {
         queue_id='Rengla',
         queue_type='mans',
         column_refs=['Rengla'],
-        expertise_keywords=['primeres', 'general'],
+        expertise_keywords=['primeres'],
         height_ratio_min=0.52,  # For depth 1
         height_ratio_max=1.0,
         weight_preference=WeightPreference.HEAVIER,
@@ -86,7 +86,7 @@ MANS_QUEUE_SPECS = {
         queue_id='Plena',
         queue_type='mans',
         column_refs=['Plena'],
-        expertise_keywords=['primeres', 'general'],
+        expertise_keywords=['primeres'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
         weight_preference=WeightPreference.HEAVIER,
@@ -97,7 +97,7 @@ MANS_QUEUE_SPECS = {
         queue_id='Buida',
         queue_type='mans',
         column_refs=['Buida'],
-        expertise_keywords=['primeres', 'general'],
+        expertise_keywords=['primeres'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
         weight_preference=WeightPreference.HEAVIER,
@@ -111,7 +111,7 @@ DAUS_QUEUE_SPECS = {
         queue_id='R↔P',
         queue_type='daus',
         column_refs=['Rengla', 'Plena'],
-        expertise_keywords=['Dau/Vent', 'dau', 'vent', 'dau/vent', 'general'],
+        expertise_keywords=['Dau/Vent'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
         weight_preference=WeightPreference.HEAVIER,
@@ -123,7 +123,7 @@ DAUS_QUEUE_SPECS = {
         queue_id='P↔B',
         queue_type='daus',
         column_refs=['Plena', 'Buida'],
-        expertise_keywords=['Dau/Vent', 'dau', 'vent', 'dau/vent', 'general'],
+        expertise_keywords=['Dau/Vent'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
         weight_preference=WeightPreference.HEAVIER,
@@ -135,7 +135,7 @@ DAUS_QUEUE_SPECS = {
         queue_id='B↔R',
         queue_type='daus',
         column_refs=['Buida', 'Rengla'],
-        expertise_keywords=['Dau/Vent', 'dau', 'vent', 'dau/vent', 'general'],
+        expertise_keywords=['Dau/Vent'],
         height_ratio_min=0.52,
         height_ratio_max=1.0,
         weight_preference=WeightPreference.HEAVIER,
@@ -150,7 +150,7 @@ LATERALS_QUEUE_SPECS = {
         queue_id='Rengla-left',
         queue_type='laterals',
         column_refs=['Rengla'],
-        expertise_keywords=['lateral', 'general'],
+        expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
         weight_preference=WeightPreference.NEUTRAL,
@@ -161,7 +161,7 @@ LATERALS_QUEUE_SPECS = {
         queue_id='Rengla-right',
         queue_type='laterals',
         column_refs=['Rengla'],
-        expertise_keywords=['lateral', 'general'],
+        expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
         weight_preference=WeightPreference.NEUTRAL,
@@ -172,7 +172,7 @@ LATERALS_QUEUE_SPECS = {
         queue_id='Plena-left',
         queue_type='laterals',
         column_refs=['Plena'],
-        expertise_keywords=['lateral', 'general'],
+        expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
         weight_preference=WeightPreference.NEUTRAL,
@@ -183,7 +183,7 @@ LATERALS_QUEUE_SPECS = {
         queue_id='Plena-right',
         queue_type='laterals',
         column_refs=['Plena'],
-        expertise_keywords=['lateral', 'general'],
+        expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
         weight_preference=WeightPreference.NEUTRAL,
@@ -194,7 +194,7 @@ LATERALS_QUEUE_SPECS = {
         queue_id='Buida-left',
         queue_type='laterals',
         column_refs=['Buida'],
-        expertise_keywords=['lateral', 'general'],
+        expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
         weight_preference=WeightPreference.NEUTRAL,
@@ -205,7 +205,7 @@ LATERALS_QUEUE_SPECS = {
         queue_id='Buida-right',
         queue_type='laterals',
         column_refs=['Buida'],
-        expertise_keywords=['lateral', 'general'],
+        expertise_keywords=['lateral'],
         height_ratio_min=0.48,
         height_ratio_max=0.55,
         weight_preference=WeightPreference.NEUTRAL,
@@ -229,10 +229,10 @@ POSITION_SPECS = {
         expertise_weight=1.0,
         weight_factor=0.5
     ),
-    
+
     'crossa': PositionRequirements(
         position_name='crossa',
-        expertise_keywords=['crossa', 'cross'],
+        expertise_keywords=['crossa'],
         count_per_column=2,
         reference_positions=['baix'],
         height_ratio_min=0.90,
@@ -244,7 +244,7 @@ POSITION_SPECS = {
         similarity_weight=0.5,
         weight_factor=0.2
     ),
-    
+
     'contrafort': PositionRequirements(
         position_name='contrafort',
         expertise_keywords=['contrafort'],
@@ -259,7 +259,7 @@ POSITION_SPECS = {
         similarity_weight=0.3,
         weight_factor=0.3
     ),
-    
+
     'agulla': PositionRequirements(
         position_name='agulla',
         expertise_keywords=['agulla'],
@@ -274,6 +274,49 @@ POSITION_SPECS = {
         weight_factor=0.3
     ),
 }
+
+@dataclass
+class Casteller:
+    """Canonical Casteller model. Internal attribute names are Python-friendly;
+    `to_record()` maps them to the DB column names used by the rest of the codebase.
+    """
+    nom_complet: str
+    nom: Optional[str] = None
+    cognoms: Optional[str] = None
+    alcada_cm: Optional[float] = None
+    alcada_espatlles_cm: Optional[float] = None
+    posicio_1: Optional[str] = None
+    posicio_2: Optional[str] = None
+    assignat: Optional[bool] = False
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> 'Casteller':
+        # Accept either canonical column names or pythonic keys
+        def get(k, alt=None):
+            return d.get(k, d.get(alt)) if alt is not None else d.get(k)
+
+        return Casteller(
+            nom_complet=get('Nom complet', 'nom_complet') or get('Nom', 'nom'),
+            nom=get('Nom', 'nom'),
+            cognoms=get('Cognoms', 'cognoms'),
+            alcada_cm= get('Alçada (cm)', 'alcada_cm'),
+            alcada_espatlles_cm= get('Alçada espatlles (cm)', 'alcada_espatlles_cm'),
+            posicio_1=get('Posició 1', 'posicio_1'),
+            posicio_2=get('Posició 2', 'posicio_2'),
+            assignat=get('assignat', 'assignat') in [True, 'True', 'true', 1]
+        )
+
+    def to_record(self, name_col: str = 'Nom complet') -> Dict[str, Any]:
+        return {
+            name_col: self.nom_complet,
+            'Nom': self.nom or '',
+            'Cognoms': self.cognoms or '',
+            'Alçada (cm)': self.alcada_cm,
+            'Alçada espatlles (cm)': self.alcada_espatlles_cm,
+            'Posició 1': self.posicio_1 or '',
+            'Posició 2': self.posicio_2 or '',
+            'assignat': self.assignat if self.assignat is not None else ''
+        }
 
 def get_castellers() -> pd.DataFrame:
     load_dotenv()
@@ -302,3 +345,55 @@ def get_castellers() -> pd.DataFrame:
             "Inactius", "Assaig", "Sobrenom", "Posicio 3"
         ], errors="ignore"
     )
+
+
+def add_castellers(df: pd.DataFrame, new_castellers: List[Casteller], name_col: str = 'Nom complet') -> pd.DataFrame:
+    """Append a list of Casteller instances to `df`, validating names and
+    preserving numeric/bool dtypes from the original frame where possible.
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError('df must be a pandas DataFrame')
+
+    existing_names = set(df.get(name_col, pd.Series(dtype=object)).astype(str).fillna('').tolist())
+
+    processed_rows: List[Dict[str, Any]] = []
+    seen_new_names = set()
+
+    for i, item in enumerate(new_castellers):
+        if not isinstance(item, Casteller):
+            raise TypeError(f'Item at index {i} is not a Casteller instance')
+
+        name_val = item.nom_complet
+        if not name_val or str(name_val).strip() == '':
+            raise ValueError(f"Casteller at index {i} missing required name")
+        if name_val in existing_names:
+            raise ValueError(f"Duplicate 'Nom complet' found: '{name_val}' already in DataFrame")
+        if name_val in seen_new_names:
+            raise ValueError(f"Duplicate 'Nom complet' in new_castellers: '{name_val}'")
+
+        seen_new_names.add(name_val)
+        processed_rows.append(item.to_record(name_col=name_col))
+
+    new_df = pd.DataFrame(processed_rows)
+
+    # Ensure all columns from new_df exist in df
+    combined_cols = list(dict.fromkeys(list(df.columns) + list(new_df.columns)))
+
+    df_reidx = df.reindex(columns=combined_cols)
+    new_df_reidx = new_df.reindex(columns=combined_cols)
+
+    # Type-coerce values for columns that are numeric or boolean in the original df
+    for col in combined_cols:
+        if col in df.columns:
+            if pd.api.types.is_numeric_dtype(df[col].dtype):
+                if col in new_df_reidx.columns:
+                    new_df_reidx[col] = pd.to_numeric(new_df_reidx[col], errors='coerce')
+            elif pd.api.types.is_bool_dtype(df[col].dtype):
+                if col in new_df_reidx.columns:
+                    new_df_reidx[col] = new_df_reidx[col].astype('boolean')
+            else:
+                if col in new_df_reidx.columns:
+                    new_df_reidx[col] = new_df_reidx[col].astype(object)
+
+    result = pd.concat([df_reidx, new_df_reidx], ignore_index=True, sort=False)
+    return result
