@@ -1,5 +1,32 @@
 # Castell Assignment Configuration
 # Tunable parameters for position and queue specifications
+castell:
+  # Column configuration (use exact column names: Rengla, Plena, Buida)
+  columns:
+    - Rengla
+    - Plena
+    - Buida
+  
+  # Tronc positions to assign (in order)
+  tronc_positions:
+    - baix
+    - segon
+    - terç
+  
+  # Which peripheral positions to include
+  include_mans: true
+  include_daus: true
+  include_laterals: true
+  include_crossa: true
+  include_contraforts: true
+  include_agulles: true
+
+optimization:
+  # Method: 'greedy', 'exhaustive', 'simulated_annealing', 'adaptive_simulated_annealing'
+  method: adaptive_simulated_annealing
+  
+  # Use weight data if available
+  use_weight: false
 
 positions:
   baix:

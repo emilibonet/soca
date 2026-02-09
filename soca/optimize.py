@@ -315,20 +315,46 @@ def _should_use_balance_optimization(position_spec: PositionRequirements) -> boo
     balance_positions = ['daus', 'laterals', 'primeres_mans', 'crossa', 'contrafort']
     return any(pos in position_spec.position_name for pos in balance_positions)
 
+
 def _calculate_candidate_score(
     candidate: pd.Series,
     target_height: float,
     position_spec: PositionRequirements,
     group_candidates: List[pd.Series] = None,
-    use_weight: bool = True
+    use_weight: bool = True,
+    depth: Optional[int] = None
 ) -> float:
     """
-    Calculate quality score for a candidate.
-    Lower is better.
+    Calculate quality score for a candidate. Lower is better.
+    
+    Parameters
+    ----------
+    candidate : pd.Series
+        Candidate casteller data
+    target_height : float
+        Reference height for ratio calculation
+    position_spec : PositionRequirements
+        Position requirements specification
+    group_candidates : List[pd.Series], optional
+        Other candidates in the same group (for similarity scoring)
+    use_weight : bool
+        Whether to use weight data if available
+    depth : int, optional
+        Queue depth (1-indexed). If == 1, applies strong penalties for
+        height/expertise violations in queue positions.
+    
+    Returns
+    -------
+    float
+        Penalty score (lower is better, 0 is perfect)
     """
     
     score = 0
     height = candidate['Alçada (cm)']
+    
+    # Detect queue position
+    is_queue_position = any(q in position_spec.position_name.lower() 
+                           for q in ['mans', 'daus', 'laterals'])
     
     # 1. Height compliance
     min_target = target_height * position_spec.height_ratio_min
@@ -336,14 +362,19 @@ def _calculate_candidate_score(
     
     if min_target <= height <= max_target:
         height_score = 0.0
-    elif height < min_target:
-        height_score = (min_target - height) * position_spec.height_penalty_factor
     else:
-        height_score = (height - max_target) * position_spec.height_penalty_factor
-    
+        if height < min_target:
+            height_score = (min_target - height) * position_spec.height_penalty_factor
+        else:
+            height_score = (height - max_target) * position_spec.height_penalty_factor
+        
+        # 10x penalty for depth=1 queue height violations
+        if depth == 1 and is_queue_position:
+            height_score *= 10.0
+        
     score += height_score * position_spec.height_weight
     
-    # 2. Expertise quality — normalized to 0.0/0.1/0.2 base units (manual §2.4: weight 0.1-0.2)
+    # 2. Expertise quality
     pos1 = str(candidate.get('Posició 1', '')).lower()
     pos2 = str(candidate.get('Posició 2', '')).lower()
     
@@ -356,6 +387,10 @@ def _calculate_candidate_score(
         expertise_score = 0.1
     else:
         expertise_score = 0.2
+        # CRITICAL: Depth=1 queue positions MUST have primary expertise
+        # Catastrophic penalty makes this a near-hard constraint
+        if depth == 1 and is_queue_position:
+            expertise_score = 50.0  # 250x normal penalty
     
     score += expertise_score * position_spec.expertise_weight
     
@@ -1405,7 +1440,8 @@ def _score_global_assignment(
             
             pos_spec = create_position_spec_from_queue(spec, depth_idx)
             score = _calculate_candidate_score(
-                candidate_row, ref_height, pos_spec, [], use_weight
+                candidate_row, ref_height, pos_spec, [], use_weight,
+                depth=depth_idx
             )
             total_score += score
             

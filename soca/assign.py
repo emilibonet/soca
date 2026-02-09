@@ -225,7 +225,7 @@ def build_castell_assignment(
     if warnings:
         logger.warning("Warnings:")
         for warn in warnings:
-            logger.warning("⚠️ %s", warn)
+            logger.warning("⚠%s", warn)
     
     # Print unassigned castellers (name, height, expertise)
     try:
@@ -319,7 +319,17 @@ def _print_queue_summary(
 
                 if assignment and assignment[0]:
                     name = assignment[0]
-                    h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                    candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
+                    h = candidate_row['Alçada (cm)']
+                    
+                    # Check expertise match
+                    pos1 = str(candidate_row.get('Posició 1', '')).lower()
+                    pos2 = str(candidate_row.get('Posició 2', '')).lower()
+                    expertise_keywords = queue_spec.expertise_keywords if queue_spec else []
+                    has_expertise = any(kw.lower() in pos1 or kw.lower() in pos2 
+                                           for kw in expertise_keywords)
+                    expertise_mark = "✓" if has_expertise else " "
+                    
                     # Compute per-person penalty (raw score scaled if queue stats provide factor)
                     try:
                         candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
@@ -334,14 +344,14 @@ def _print_queue_summary(
                         raw_score = 0.0
 
                     if ref_info:
-                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm   penalty={raw_score:.2f}")
+                        print(f"  {expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm   penalty={raw_score:.2f}")
                     else:
-                        print(f"  Depth {depth_idx}: {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
+                        print(f"  {expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
                 else:
                     if ref_info:
-                        print(f"  Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}–{ref_info[2]:.1f} cm")
+                        print(f"  {expertise_mark} Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm")
                     else:
-                        print(f"  Depth {depth_idx}: [empty]")
+                        print(f"  {expertise_mark} Depth {depth_idx}: [empty]")
 
 
 def _print_tronc_assignment(
@@ -386,11 +396,20 @@ def _print_tronc_assignment(
             ref_height = reference_heights[col_name]
             min_target = ref_height * position_spec.height_ratio_min
             max_target = ref_height * position_spec.height_ratio_max
-            print(f"  ref={ref_height:.1f} cm   target={min_target:.1f}–{max_target:.1f} cm")
+            print(f"  ref={ref_height:.1f} cm   target={min_target:.1f}─{max_target:.1f} cm")
         
         for i, name in enumerate(assigned, 1):
             if name:
-                h = castellers[castellers['Nom complet'] == name]['Alçada (cm)'].iloc[0]
+                candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
+                h = candidate_row['Alçada (cm)']
+                
+                # Check expertise match
+                pos1 = str(candidate_row.get('Posició 1', '')).lower()
+                pos2 = str(candidate_row.get('Posició 2', '')).lower()
+                has_expertise = any(kw.lower() in pos1 or kw.lower() in pos2 
+                                   for kw in position_spec.expertise_keywords)
+                expertise_mark = "✓" if has_expertise else " "
+                
                 # Compute per-person penalty using position spec and reference height
                 try:
                     candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
@@ -401,7 +420,7 @@ def _print_tronc_assignment(
 
                 if reference_heights:
                     ratio_pct = (h / reference_heights[col_name]) * 100
-                    print(f"    {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%   penalty={raw_score:.2f}")
+                    print(f"  {expertise_mark} {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%   penalty={raw_score:.2f}")
                 else:
                     print(f"  {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
 
@@ -595,10 +614,13 @@ def apply_preassigned_to_all_assignments(
       otherwise the DataFrame index value is used.
     - Marks resolved castellers as assigned using `assigned_flag_col` on the DataFrame.
     - Populates `all_assignments[pos][column] = tuple(resolved_ids)`.
+    - VALIDATES EXPERTISE: Warns if preassigned castellers lack required expertise.
 
     Raises:
     - ValueError for ambiguous or missing names with actionable messages.
     """
+    from .data import POSITION_SPECS
+    
     # Prepare assigned flag
     if assigned_flag_col not in castellers.columns:
         castellers[assigned_flag_col] = False
@@ -612,6 +634,9 @@ def apply_preassigned_to_all_assignments(
         all_assignments.setdefault(pos, {})
 
     for pos, cols in preassigned.items():
+        # Get position spec for expertise validation
+        position_spec = POSITION_SPECS.get(pos)
+        
         for colname, names_tuple in cols.items():
             if not names_tuple:
                 # empty tuple -> leave as empty assignment
@@ -663,6 +688,26 @@ def apply_preassigned_to_all_assignments(
                     name_to_store = str(rid)
 
                 resolved_names.append(name_to_store)
+                
+                # EXPERTISE VALIDATION: Check if preassigned casteller has required expertise
+                if position_spec is not None:
+                    casteller_row = castellers[castellers[name_col] == name_to_store]
+                    if not casteller_row.empty:
+                        pos1 = str(casteller_row['Posició 1'].iloc[0]).lower()
+                        pos2 = str(casteller_row['Posició 2'].iloc[0]).lower()
+                        has_expertise = any(kw.lower() in pos1 or kw.lower() in pos2 
+                                           for kw in position_spec.expertise_keywords)
+                        
+                        if not has_expertise:
+                            logger.warning(
+                                "⚠ PREASSIGNED %s '%s' in column %s lacks required expertise (keywords: %s)",
+                                pos.upper(), name_to_store, colname, position_spec.expertise_keywords
+                            )
+                            logger.warning(
+                                "    Current positions: Posició 1='%s', Posició 2='%s'",
+                                casteller_row['Posició 1'].iloc[0] if 'Posició 1' in casteller_row.columns else 'N/A',
+                                casteller_row['Posició 2'].iloc[0] if 'Posició 2' in casteller_row.columns else 'N/A'
+                            )
 
             # Store canonical names in all_assignments so downstream filters can
             # always compare against the `Nom complet` column.

@@ -7,6 +7,10 @@
 # Notebooks
 *.ipynb
 
+# Input files
+*.yaml
+!config.yaml
+
 ### PRE-DEFINED IGNORES ###
 
 # Byte-compiled / optimized / DLL files
