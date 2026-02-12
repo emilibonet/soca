@@ -1,5 +1,8 @@
 # Castell Assignment Configuration
 # Tunable parameters for position and queue specifications
+display:
+  accent_color: "#d9944a"    # or "cyan", "rgb(0,215,255)", etc.
+
 castell:
   # Column configuration (use exact column names: Rengla, Plena, Buida)
   columns:

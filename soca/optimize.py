@@ -16,6 +16,19 @@ from .utils import (
 
 logger = get_logger(__name__)
 
+# TUI manager reference (set by main.py)
+_tui_manager = None
+
+def _get_tui_logger(section_name=None):
+    """Get TUI-aware logger if manager is available."""
+    if _tui_manager is not None:
+        try:
+            from .display import SectionLogger
+            return SectionLogger(_tui_manager, section_name)
+        except ImportError:
+            pass
+    return None
+
 MAX_QUEUE_DEPTH = 20
 
 def find_optimal_assignment(
@@ -54,24 +67,32 @@ def find_optimal_assignment(
     candidates_expertise = _get_valid_candidates(castellers, position_spec, allow_relaxed=False, requested_count=requested)
     expertise_count = len(candidates_expertise)
     
-    # Print assignment header
-    logger.info("Assigning %s", position_spec.position_name.upper())
+    # Get TUI logger if available
+    tui_log = _get_tui_logger(f"Assigning {position_spec.position_name.upper()}")
     
     # Filter out already assigned castellers
     all_assigned = _get_all_assigned_castellers(previous_assignments)
     candidates = candidates_expertise[~candidates_expertise['Nom complet'].isin(all_assigned)]
     available_count = len(candidates)
     
-    # Print funnel view
-    logger.info("  %s | total=%d | unassigned=%d | expert=%d | avail=%d",
-            position_spec.position_name.upper(), total_in_db, total_in_db - already_assigned,
-            expertise_count, available_count)
-    logger.info("  Requested: %d/col × %d = %d", position_spec.count_per_column, len(columns), requested)
+    # Print funnel view - TUI-aware
+    if tui_log:
+        tui_log.info(f"{position_spec.position_name.upper()} | total={total_in_db} | unassigned={total_in_db - already_assigned} | expert={expertise_count} | avail={available_count}")
+        tui_log.info(f"Requested: {position_spec.count_per_column}/col × {len(columns)} = {requested}")
+    else:
+        logger.info("Assigning %s", position_spec.position_name.upper())
+        logger.info("  %s | total=%d | unassigned=%d | expert=%d | avail=%d",
+                position_spec.position_name.upper(), total_in_db, total_in_db - already_assigned,
+                expertise_count, available_count)
+        logger.info("  Requested: %d/col × %d = %d", position_spec.count_per_column, len(columns), requested)
     
     # Check for shortages
     if available_count < requested:
         shortage = requested - available_count
-        logger.warning("SHORTAGE: %d slots will remain empty", shortage)
+        if tui_log:
+            tui_log.warning(f"SHORTAGE: {shortage} slots will remain empty")
+        else:
+            logger.warning("SHORTAGE: %d slots will remain empty", shortage)
     
     # If no candidates with expertise, try relaxed filtering
     if available_count == 0:
@@ -79,12 +100,18 @@ def find_optimal_assignment(
         candidates = candidates[~candidates['Nom complet'].isin(all_assigned)]
         relaxed_count = len(candidates)
         if relaxed_count > 0:
-            logger.info("Using relaxed expertise filtering: %d candidates", relaxed_count)
+            if tui_log:
+                tui_log.info(f"Using relaxed expertise filtering: {relaxed_count} candidates")
+            else:
+                logger.info("Using relaxed expertise filtering: %d candidates", relaxed_count)
             available_count = relaxed_count
     
     # If still no candidates, return empty assignment
     if len(candidates) == 0:
-        logger.warning("No available candidates for %s", position_spec.position_name)
+        if tui_log:
+            tui_log.warning(f"No available candidates for {position_spec.position_name}")
+        else:
+            logger.warning("No available candidates for %s", position_spec.position_name)
         return {col_name: () for col_name in columns.keys()}
 
     # Shortage penalty factor — reduces quality penalties under scarcity (manual §2.2)
@@ -127,8 +154,6 @@ def find_optimal_assignment(
         )
     else:
         raise ValueError(f"Unknown optimization method: {optimization_method}")
-    
-    logger.info("")  # Blank line after optimization
 
     if return_stats:
         optimization_stats = {'method': optimization_method, **stats}
@@ -973,12 +998,17 @@ def adaptive_simulated_annealing_assignment(
     Adjusts cooling rate based on acceptance rate - if we're accepting
     too many bad solutions, cool faster; if we're stuck, cool slower.
     """
+    # Get TUI logger
+    tui_log = _get_tui_logger()
     column_names = list(columns.keys())
     candidate_names = list(candidates['Nom complet'])
     
     total_needed = len(column_names) * position_spec.count_per_column
     if len(candidate_names) < total_needed:
-        logger.warning("Not enough candidates; falling back to greedy")
+        if tui_log:
+            tui_log.warning("Not enough candidates; falling back to greedy")
+        else:
+            logger.warning("Not enough candidates; falling back to greedy")
         return _greedy_assignment(
             candidates, columns, reference_heights, position_spec, castellers, use_weight, shortage_factor
         )
@@ -1016,7 +1046,10 @@ def adaptive_simulated_annealing_assignment(
     # Set initial temperature to ~2x standard deviation of scores
     temperature = np.std(sample_scores) * 2
     
-    logger.info("Starting adaptive annealing (initial score: %.2f)", current_score)
+    if tui_log:
+        tui_log.info(f"Starting adaptive annealing (initial score: {current_score:.2f})")
+    else:
+        logger.info("Starting adaptive annealing (initial score: %.2f)", current_score)
     
     iteration = 0
     no_improvement_count = 0
@@ -1079,26 +1112,38 @@ def adaptive_simulated_annealing_assignment(
             # Only log progress every 1000 iterations
             if iteration % 1000 == 0:
                 stats['progress'].append((iteration, best_score))
-                logger.info("Progress: %d iterations, best=%.2f", iteration, best_score)
+                if tui_log:
+                    tui_log.info(f"Progress: {iteration} iterations, best={best_score:.2f}")
+                else:
+                    logger.info("Progress: %d iterations, best=%.2f", iteration, best_score)
             
             acceptance_count = 0
         
         # Stop if stuck for too long
         if no_improvement_count > 1000:
             stats['stop_reason'] = 'no improvement (1000 iters)'
-            logger.info("No improvement for 1000 iterations - stopping early")
+            if tui_log:
+                tui_log.info("No improvement for 1000 iterations - stopping early")
+            else:
+                logger.info("No improvement for 1000 iterations - stopping early")
             break
         
         # Stop if temperature too low
         if temperature < 0.01:
             stats['stop_reason'] = 'temperature too low'
-            logger.info("Temperature too low - stopping")
+            if tui_log:
+                tui_log.info("Temperature too low - stopping")
+            else:
+                logger.info("Temperature too low - stopping")
             break
     
     stats['iterations'] = iteration
     stats['final_score'] = best_score
     
-    logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
+    if tui_log:
+        tui_log.info(f"Completed in {iteration} iterations (score: {best_score:.2f})")
+    else:
+        logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
     
     return best_solution, stats
 
@@ -1246,6 +1291,9 @@ def global_peripheral_optimization(
     max_iterations: int = 10000
 ) -> Tuple[Dict[str, Dict[str, List[Tuple[str, ...]]]], Dict]:
     """Global optimization across mans, daus, and laterals simultaneously."""
+    # Get TUI logger
+    tui_log = _get_tui_logger("Assigning peripheral positions")
+    
     # Merge all specs with type prefix
     all_specs = {}
     for qid, spec in mans_specs.items():
@@ -1277,7 +1325,10 @@ def global_peripheral_optimization(
         ))
     temperature = np.std(sample_scores) * 2 if len(sample_scores) > 1 else 100.0
     
-    logger.info("Starting global peripheral optimization (initial score: %.2f)", current_score)
+    if tui_log:
+        tui_log.info(f"Starting global peripheral optimization (initial score: {current_score:.2f})")
+    else:
+        logger.info("Starting global peripheral optimization (initial score: %.2f)", current_score)
     
     iteration = 0
     no_improvement = 0
@@ -1323,12 +1374,18 @@ def global_peripheral_optimization(
             acceptance_count = 0
             
             if iteration % 1000 == 0:
-                logger.info("Iteration %d, best=%.2f", iteration, best_score)
+                if tui_log:
+                    tui_log.info(f"Iteration {iteration}, best={best_score:.2f}")
+                else:
+                    logger.info("Iteration %d, best=%.2f", iteration, best_score)
         
         if no_improvement > 1500:
             break
     
-    logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
+    if tui_log:
+        tui_log.info(f"Completed in {iteration} iterations (score: {best_score:.2f})")
+    else:
+        logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
     
     # Unpack solution by type
     result = {'mans': {}, 'daus': {}, 'laterals': {}}
