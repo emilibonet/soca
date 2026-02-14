@@ -5,6 +5,7 @@ Main assignment pipeline with TUI display integration.
 import os
 import sys
 import yaml
+import argparse
 from json import dump
 from typing import Dict, List, Any, Optional
 from rich.console import Console
@@ -17,7 +18,7 @@ from soca.assign import apply_preassigned_to_all_assignments
 from soca.optimize import find_optimal_assignment
 from soca.utils import build_columns, compute_column_tronc_heights, filter_available_castellers
 from soca.queue_assign import assign_rows_pipeline
-from soca.display import SectionManager, SectionLogger, create_final_panel
+from soca.display import SectionManager, SectionLogger, create_final_panel, summarize_assignments
 
 # Configuration file paths
 CONFIG_YAML = 'config.yaml'
@@ -141,14 +142,22 @@ def parse_preassignments(preassigned_config: Optional[Dict[str, Any]], logger=No
         
         preassignments[position_name] = {}
         for column_name, names in columns.items():
+            # Handle nested lists (flatten for positions like crossa)
             if isinstance(names, list):
-                # Filter out None/empty values
-                valid_names = [n for n in names if n]
-                if valid_names:
-                    preassignments[position_name][column_name] = tuple(valid_names)
+                # Check if it's a list of lists/strings (nested structure)
+                flat_names = []
+                for item in names:
+                    if isinstance(item, list):
+                        flat_names.extend([n for n in item if n])
+                    elif isinstance(item, str) and item:
+                        flat_names.append(item)
+                
+                if flat_names:
+                    preassignments[position_name][column_name] = flat_names
+                    
             elif isinstance(names, str) and names:
                 # Single name as string
-                preassignments[position_name][column_name] = (names,)
+                preassignments[position_name][column_name] = [names]
             else:
                 if logger:
                     logger.warning(
@@ -156,6 +165,58 @@ def parse_preassignments(preassigned_config: Optional[Dict[str, Any]], logger=No
                     )
     
     return preassignments
+
+
+def validate_preassignments(preassignments: Dict[str, Dict], logger=None) -> bool:
+    """Validate preassignments for duplicates.
+    
+    Returns
+    -------
+    bool
+        True if valid, False if duplicates found
+    """
+    # Collect all assigned names with their locations
+    name_locations = {}
+    
+    for position_name, columns in preassignments.items():
+        for column_name, names in columns.items():
+            names_list = names if isinstance(names, (list, tuple)) else [names]
+            
+            for name in names_list:
+                if not name:
+                    continue
+                    
+                location = f"{position_name}[{column_name}]"
+                if name in name_locations:
+                    name_locations[name].append(location)
+                else:
+                    name_locations[name] = [location]
+    
+    # Find duplicates
+    duplicates = {name: locs for name, locs in name_locations.items() if len(locs) > 1}
+    
+    if duplicates:
+        if logger:
+            logger.error("="*60)
+            logger.error("ERROR: Duplicate preassignments detected")
+            logger.error("="*60)
+            for name, locations in sorted(duplicates.items()):
+                logger.error(f"'{name}' appears {len(locations)} times:")
+                for loc in locations:
+                    logger.error(f"  - {loc}")
+                logger.error("")
+        else:
+            print("="*60)
+            print("ERROR: Duplicate preassignments detected")
+            print("="*60)
+            for name, locations in sorted(duplicates.items()):
+                print(f"'{name}' appears {len(locations)} times:")
+                for loc in locations:
+                    print(f"  - {loc}")
+                print("")
+        return False
+    
+    return True
 
 
 def parse_castell_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -425,6 +486,16 @@ def main():
     # ===================================================================
     # LOAD CONFIG FOR TUI SETUP
     # ===================================================================
+    # Parse CLI args for optional overrides (e.g. custom preassigned file)
+    parser = argparse.ArgumentParser(description="SOCA assignment runner")
+    parser.add_argument(
+        "--preassigned", "-p",
+        help="Path to preassigned YAML file (overrides default)",
+        default=PREASSIGNED_YAML
+    )
+    args = parser.parse_args()
+    preassigned_path = args.preassigned or PREASSIGNED_YAML
+
     try:
         with open(CONFIG_YAML, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -470,7 +541,7 @@ def main():
             
             # Load preassignments
             logger.info("[2/5] Checking for preassignments...")
-            preassigned_config = load_yaml_file(PREASSIGNED_YAML, required=False, logger=logger)
+            preassigned_config = load_yaml_file(preassigned_path, required=False, logger=logger)
             preassignments = parse_preassignments(preassigned_config, logger=logger)
             if preassignments:
                 total_preassigned = sum(len(cols) for cols in preassignments.values())
@@ -507,12 +578,18 @@ def main():
             # Initialize assignments and apply preassignments
             all_assignments = {}
             if preassignments:
+                # Validate for duplicates
+                if not validate_preassignments(preassignments, logger):
+                    tui.fail_section("Loading data")
+                    raise ValueError("Preassignment validation failed: duplicate assignments detected")
+                
                 logger.info("Applying preassignments...")
                 apply_preassigned_to_all_assignments(
                     preassignments, 
                     castellers, 
                     all_assignments, 
-                    name_col='Nom complet'
+                    name_col='Nom complet',
+                    logger_override=logger
                 )
                 logger.info("✓ Preassignments applied")
             
@@ -544,17 +621,20 @@ def main():
         # ================================================================
         with tui.section("Assigning BAIX"):
             logger = SectionLogger(tui, "Assigning BAIX")
-            
-            assign_single_position(
-                position_name='baix',
-                castellers=castellers,
-                columns=columns,
-                all_assignments=all_assignments,
-                column_tronc_heights=None,  # Pinya level
-                optimization_method=optimization['method'],
-                use_weight=optimization['use_weight'],
-                logger=logger
-            )
+            try:
+                assign_single_position(
+                    position_name='baix',
+                    castellers=castellers,
+                    columns=columns,
+                    all_assignments=all_assignments,
+                    column_tronc_heights=None,  # Pinya level
+                    optimization_method=optimization['method'],
+                    use_weight=optimization['use_weight'],
+                    logger=logger
+                )
+            except Exception as e:
+                tui.fail_section("Assigning BAIX")
+                raise
         
         # ================================================================
         # SECTION 4: ASSIGNING CROSSA
@@ -562,17 +642,20 @@ def main():
         if castell_config.get('include_crossa', True):
             with tui.section("Assigning CROSSA"):
                 logger = SectionLogger(tui, "Assigning CROSSA")
-                
-                assign_single_position(
-                    position_name='crossa',
-                    castellers=castellers,
-                    columns=columns,
-                    all_assignments=all_assignments,
-                    column_tronc_heights=None,  # Pinya level
-                    optimization_method=optimization['method'],
-                    use_weight=optimization['use_weight'],
-                    logger=logger
-                )
+                try:
+                    assign_single_position(
+                        position_name='crossa',
+                        castellers=castellers,
+                        columns=columns,
+                        all_assignments=all_assignments,
+                        column_tronc_heights=None,  # Pinya level
+                        optimization_method=optimization['method'],
+                        use_weight=optimization['use_weight'],
+                        logger=logger
+                    )
+                except Exception as e:
+                    tui.fail_section("Assigning BAIX")
+                    raise
         
         # ================================================================
         # SECTION 5: ASSIGNING CONTRAFORT
@@ -580,17 +663,20 @@ def main():
         if castell_config.get('include_contraforts', True):
             with tui.section("Assigning CONTRAFORT"):
                 logger = SectionLogger(tui, "Assigning CONTRAFORT")
-                
-                assign_single_position(
-                    position_name='contrafort',
-                    castellers=castellers,
-                    columns=columns,
-                    all_assignments=all_assignments,
-                    column_tronc_heights=None,  # Pinya level
-                    optimization_method=optimization['method'],
-                    use_weight=optimization['use_weight'],
-                    logger=logger
-                )
+                try:
+                    assign_single_position(
+                        position_name='contrafort',
+                        castellers=castellers,
+                        columns=columns,
+                        all_assignments=all_assignments,
+                        column_tronc_heights=None,  # Pinya level
+                        optimization_method=optimization['method'],
+                        use_weight=optimization['use_weight'],
+                        logger=logger
+                    )
+                except Exception as e:
+                    tui.fail_section("Assigning CONTRAFORT")
+                    raise
         
         # Compute tronc heights after pinya positions
         column_tronc_heights = compute_column_tronc_heights(
@@ -607,16 +693,20 @@ def main():
                 logger = SectionLogger(tui, "Assigning AGULLA")
                 
                 logger.info("Computing tronc reference heights...")
-                assign_single_position(
-                    position_name='agulla',
-                    castellers=castellers,
-                    columns=columns,
-                    all_assignments=all_assignments,
-                    column_tronc_heights=column_tronc_heights,
-                    optimization_method=optimization['method'],
-                    use_weight=optimization['use_weight'],
-                    logger=logger
-                )
+                try:
+                    assign_single_position(
+                        position_name='agulla',
+                        castellers=castellers,
+                        columns=columns,
+                        all_assignments=all_assignments,
+                        column_tronc_heights=column_tronc_heights,
+                        optimization_method=optimization['method'],
+                        use_weight=optimization['use_weight'],
+                        logger=logger
+                    )
+                except Exception as e:
+                    tui.fail_section("Assigning AGULLA")
+                    raise
         
         # ================================================================
         # SECTION 7: ASSIGNING PERIPHERAL POSITIONS
@@ -626,21 +716,28 @@ def main():
             
             logger.info("Starting peripheral assignment (mans, daus, laterals)...")
             logger.info("Building queue specifications...")
+            try:
+                result, stats = assign_rows_pipeline(
+                    castellers=castellers,
+                    columns=columns,
+                    column_tronc_heights=column_tronc_heights,
+                    all_assignments=all_assignments,
+                    include_mans=castell_config.get('include_mans', True),
+                    include_daus=castell_config.get('include_daus', True),
+                    include_laterals=castell_config.get('include_laterals', True)
+                )
+            except Exception as e:
+                tui.fail_section("Assigning peripheral positions")
+                raise
             
-            result, stats = assign_rows_pipeline(
-                castellers=castellers,
-                columns=columns,
-                column_tronc_heights=column_tronc_heights,
-                all_assignments=all_assignments,
-                include_mans=castell_config.get('include_mans', True),
-                include_daus=castell_config.get('include_daus', True),
-                include_laterals=castell_config.get('include_laterals', True)
-            )
+            for queue_type in ['mans', 'daus', 'laterals']:
+                if queue_type in result:
+                    all_assignments[queue_type] = result[queue_type]
             
             # Log summary per queue type
             for queue_type in ['mans', 'daus', 'laterals']:
                 if queue_type in result:
-                    logger.info(f"Optimizing {queue_type.upper()} queues...")
+                    logger.info(f"{queue_type.upper()} assigned:")
                     for queue_id, depth_list in result[queue_type].items():
                         filled = len([d for d in depth_list if d and d[0]])
                         logger.info(f"  {queue_id}: {filled} filled")
@@ -676,18 +773,27 @@ def main():
         with open(output_file, "w", encoding='utf-8') as f:
             dump(output_data, f, indent=2, ensure_ascii=False)
         
-    finally:
-        for section in tui.sections:
-            if section['status'] != 'completed':
-                tui.complete_section(section['title'])
-        
-        tui.stop()
-        
         console = Console(file=sys.stdout, force_terminal=True)
         
+        # Print detailed assignment summary
+        console.print("\n" + "="*60)
+        console.print("FINAL ASSIGNMENTS")
+        console.print("="*60 + "\n")
+
+        summary = summarize_assignments(
+            all_assignments=all_assignments,
+            castellers=castellers,
+            columns=columns,
+            column_tronc_heights=column_tronc_heights,
+            assignment_stats={},
+            peripheral_stats=stats
+        )
         console.print()
         console.print(create_final_panel(all_assignments, castellers, output_file))
         console.print()
+    
+    finally:        
+        tui.stop()
 
 
 if __name__ == "__main__":

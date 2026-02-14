@@ -1,18 +1,6 @@
 """
 End-to-end castell assignment pipeline — patched to accept a partial `all_assignments` input.
 
-Behavior changes:
-- `build_castell_assignment` now accepts an optional `all_assignments` argument. If
-  provided, the pipeline will treat it as pre-filled assignments (for example,
-  preassigned tronc members from an Excel layout) and will only fill missing
-  columns/positions.
-- When assigning tronc positions, the function will call the optimizer but will
-  merge results: preassigned entries are preserved and only missing columns are
-  populated with newly computed assignments.
-- If a `position_name` in `tronc_positions` has no POSITION_SPECS entry and some
-  columns are still missing in `all_assignments`, the function raises a
-  ValueError so the caller can provide the missing preassignment or add a spec.
-
 This file remains the orchestrator and keeps no heuristics beyond orchestration.
 """
 from typing import Dict, Tuple, Optional, Any, List
@@ -24,14 +12,12 @@ from .utils import get_logger
 logger = get_logger(__name__)
 
 from .optimize import find_optimal_assignment
-
 from .utils import (
     build_columns,
     compute_column_tronc_heights,
 )
-
 from .data import POSITION_SPECS
-
+from .display import summarize_assignments
 from .queue_assign import assign_rows_pipeline
 
 # Update build_castell_assignment() - replace column references
@@ -188,14 +174,25 @@ def build_castell_assignment(
         include_daus=castell_config.get('include_daus', True),
         include_mans=castell_config.get('include_mans', True)
     )
+    for queue_type in ['mans', 'daus', 'laterals']:
+        if queue_type in peripheral_result:
+            all_assignments[queue_type] = peripheral_result[queue_type]
     
-    # Print final assignments report
     logger.info("\n" + "="*60)
     logger.info("# FINAL ASSIGNMENTS")
     logger.info("="*60)
 
-    # TODO: Call assignemnt summary function with stats
-    raise NotImplementedError("Final assignment summary report not implemented yet")
+    summary = summarize_assignments(
+        all_assignments=all_assignments,
+        castellers=castellers,
+        columns=columns,
+        column_tronc_heights=column_tronc_heights,
+        assignment_stats=assignment_stats,
+        peripheral_stats=peripheral_stats
+    )
+    
+    logger.info(f"\nTotal assigned: {summary.get('total_assigned', 0)}")
+    logger.info(f"Total unassigned: {summary.get('total_unassigned', 0)}")
 
     return all_assignments
 
@@ -294,7 +291,7 @@ def resolve_name_to_id(
     # No matches: offer helpful hint about available names
     example_names = castellers[name_col].astype(str).head(10).tolist()
     raise ValueError(
-        f"Preassigned name not found: '{name}'. Examples of names in database: {example_names[:10]}. "
+        f"Preassigned name not found: '{name}'. "
         "Ensure exact spelling or provide an 'id' column in the layout."
     )
 
@@ -306,6 +303,8 @@ def apply_preassigned_to_all_assignments(
     name_col: str = 'Nom complet',
     id_col: Optional[str] = None,
     assigned_flag_col: str = 'assignat',
+    availability_flag_col: str = 'Assaig',
+    logger_override=None
 ) -> None:
     """Apply preassigned layout (by names) to `all_assignments` in-place.
 
@@ -321,6 +320,7 @@ def apply_preassigned_to_all_assignments(
     - ValueError for ambiguous or missing names with actionable messages.
     """
     from .data import POSITION_SPECS
+    _log = logger_override if logger_override is not None else logger
     
     # Prepare assigned flag
     if assigned_flag_col not in castellers.columns:
@@ -346,6 +346,18 @@ def apply_preassigned_to_all_assignments(
 
             resolved_ids: List[Any] = []
             for name in names_tuple:
+                # Check availability first
+                if availability_flag_col in castellers.columns:
+                    name_matches = castellers[castellers[name_col] == str(name)]
+                    if not name_matches.empty:
+                        is_unavailable = name_matches[availability_flag_col].iloc[0]
+                        if pd.notna(is_unavailable) and not bool(is_unavailable):
+                            _log.warning(
+                                f"PREASSIGNED '{name}' for {pos}[{colname}] is NOT AVAILABLE "
+                                f"({availability_flag_col}=False). Removing preassignment."
+                            )
+                            continue
+                
                 # If the caller accidentally provided numeric ids as strings, try to detect
                 # and accept them directly if they match a DataFrame id or index.
                 if isinstance(name, (int, float)) and not pd.isna(name):
@@ -359,8 +371,12 @@ def apply_preassigned_to_all_assignments(
                     # otherwise fallthrough to name resolution
 
                 # Resolve by name (robust)
-                resolved = resolve_name_to_id(castellers, str(name), name_col=name_col, id_col=id_col)
-                resolved_ids.append(resolved)
+                try:
+                    resolved = resolve_name_to_id(castellers, str(name), name_col=name_col, id_col=id_col)
+                    resolved_ids.append(resolved)
+                except ValueError as e:
+                    _log.warning(f"Skipping preassignment '{name}' for {pos}[{colname}]: {e}")
+                    continue
 
             # Map resolved ids/indices back to the canonical name (name_col) for storage
             resolved_names: List[str] = []
@@ -400,11 +416,11 @@ def apply_preassigned_to_all_assignments(
                                            for kw in position_spec.expertise_keywords)
                         
                         if not has_expertise:
-                            logger.warning(
-                                "⚠ PREASSIGNED %s '%s' in column %s lacks required expertise (keywords: %s)",
+                            _log.warning(
+                                "PREASSIGNED %s '%s' in column %s lacks required expertise (keywords: %s)",
                                 pos.upper(), name_to_store, colname, position_spec.expertise_keywords
                             )
-                            logger.warning(
+                            _log.warning(
                                 "    Current positions: Posició 1='%s', Posició 2='%s'",
                                 casteller_row['Posició 1'].iloc[0] if 'Posició 1' in casteller_row.columns else 'N/A',
                                 casteller_row['Posició 2'].iloc[0] if 'Posició 2' in casteller_row.columns else 'N/A'
@@ -412,7 +428,29 @@ def apply_preassigned_to_all_assignments(
 
             # Store canonical names in all_assignments so downstream filters can
             # always compare against the `Nom complet` column.
-            all_assignments[pos][colname] = tuple(resolved_names)
+            # For peripheral queues (mans/daus/laterals) the rest of the
+            # pipeline expects a list of depth-tuples (e.g. [(name,), (name,), ...]).
+            # If a flat sequence of names was supplied in the YAML, convert it
+            # here to the depth-list structure. Otherwise store a tuple for
+            # tronc-style positions.
+            if pos in ("mans", "daus", "laterals"):
+                # If the caller gave a single tuple/list of names for this
+                # queue column, convert to depth list. If they already
+                # provided a depth-list (list of tuples), accept it.
+                if isinstance(resolved_names, list) and resolved_names and isinstance(resolved_names[0], (list, tuple)):
+                    # Already depth-list-ish: normalize inner sequences to tuples
+                    depth_list = [tuple(item) for item in resolved_names]
+                    all_assignments[pos][colname] = depth_list
+                else:
+                    depth_list = []
+                    for name_item in resolved_names:
+                        if name_item:
+                            depth_list.append((name_item,))
+                        else:
+                            depth_list.append((None,))
+                    all_assignments[pos][colname] = depth_list
+            else:
+                all_assignments[pos][colname] = tuple(resolved_names)
 
             # Mark assigned in the castellers DataFrame. Prefer marking by id
             # where available, but also mark by name for any string-resolved values.

@@ -58,24 +58,4 @@ def assign_rows_pipeline(
         use_weight=True
     )
     
-    # Update all_assignments
-    for queue_type in ['mans', 'daus', 'laterals']:
-        if queue_type in result:
-            all_assignments[queue_type] = result[queue_type]
-    
-    # Summary per type
-    for queue_type in ['mans', 'daus', 'laterals']:
-        if queue_type in result:
-            tui_log = _get_tui_logger(f"{queue_type.upper()} Summary")
-            if tui_log:
-                tui_log.info("%s Summary:", queue_type.upper())
-                for queue_id, depth_list in result[queue_type].items():
-                    filled = len([d for d in depth_list if d and d[0]])
-                    tui_log.info("  %s: %d filled", queue_id, filled)
-            else:
-                logger.info("%s Summary:", queue_type.upper())
-                for queue_id, depth_list in result[queue_type].items():
-                    filled = len([d for d in depth_list if d and d[0]])
-                    logger.info("  %s: %d filled", queue_id, filled)
-    
     return result, stats

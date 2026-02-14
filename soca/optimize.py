@@ -1521,8 +1521,11 @@ def _score_global_assignment(
     for qtype, depths in type_depths.items():
         if depths:
             variance = max(depths) - min(depths)
-            total_score += variance * 10.0
-    
+            if variance > 1:
+                total_score += (variance - 1) * 1e6  # Strong penalty for variance >1
+            else:
+                total_score += variance * 10.0  # Mild penalty within tolerance
+                
     return total_score
 
 

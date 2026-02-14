@@ -16,6 +16,12 @@ castell:
     - segon
     - terç
   
+  # Note: Always 2 dosos, 1 acotxador, 1 enxaneta
+  pom_positions:
+    - dosos
+    - acotxador
+    - enxaneta
+
   # Which peripheral positions to include
   include_mans: true
   include_daus: true

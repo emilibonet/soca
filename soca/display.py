@@ -113,6 +113,10 @@ class SectionManager:
             # Completed - green checkmark, dim
             text.append("✓ ", style="green dim")
             text.append(section['title'], style="dim")
+        elif section['status'] == 'failed':
+            # Failed - red X, not dimmed
+            text.append("✖ ", style="red bold")
+            text.append(section['title'], style="red")
         elif is_current:
             # Current - animated spinner with gradient
             frame_idx = int(time.time() * 10) % len(self._get_spinner_frames())
@@ -164,8 +168,14 @@ class SectionManager:
             content.append(self._render_section(section, is_current))
             content.append("\n")
             
-            # ONLY show logs for ACTIVE section (not completed)
-            if is_current and section['status'] == 'active':
+            # Show logs for ACTIVE sections, FAILED sections, or warnings from COMPLETED sections
+            show_logs = (
+                (is_current and section['status'] == 'active') or
+                section['status'] == 'failed' or
+                (section['status'] == 'completed' and self.section_logs.get(section['title'], []))
+            )
+            
+            if show_logs:
                 for log_line in self._render_logs(section['title']):
                     content.append(log_line)
                     content.append("\n")
@@ -214,13 +224,10 @@ class SectionManager:
         self._stop_animation = True  # ADD
         if self.live:
             self.live.stop()
-        
+
         # Restore stdout/stderr
-        if hasattr(self, '_original_stdout'):
-            # sys.stdout.close()
-            # sys.stderr.close()
-            sys.stdout = self._original_stdout
-            sys.stderr = self._original_stderr
+        sys.stdout = self._original_stdout
+        sys.stderr = self._original_stderr
     
     def add_section(self, title: str):
         """Add a new section to the display."""
@@ -251,23 +258,37 @@ class SectionManager:
             self.live.update(self._render_display())
     
     def complete_section(self, title: str):
-        """Mark a section as completed (show checkmark, CLEAR logs)."""
+        """Mark a section as completed (show checkmark, clear logs except warnings)."""
         for section in self.sections:
             if section['title'] == title:
                 section['status'] = 'completed'
                 section['end_time'] = time.time()
                 break
         
-        # CLEAR logs for completed section
+        # Keep only warnings for completed sections
         if title in self.section_logs:
-            self.section_logs[title] = []
+            warnings = [log for log in self.section_logs[title] if log.startswith('⚠')]
+            self.section_logs[title] = warnings
         
         if self.current_section == title:
             self.current_section = None
         
         if self.live:
             self.live.update(self._render_display())
-    
+
+    def fail_section(self, title: str):
+        """Mark a section as failed."""
+        for section in self.sections:
+            if section['title'] == title:
+                section['status'] = 'failed'
+                section['end_time'] = time.time()
+                break
+        if self.current_section == title:
+            self.current_section = None
+        
+        if self.live:
+            self.live.update(self._render_display())
+
     def log(self, message: str, section: Optional[str] = None):
         """Add a log message to the current or specified section."""
         target_section = section or self.current_section
@@ -285,7 +306,10 @@ class SectionManager:
         try:
             yield self
         finally:
-            self.complete_section(title)
+            for section in self.sections:
+                if section['title'] == title and section['status'] != 'failed':
+                    self.complete_section(title)
+                    break
 
 
 class SectionLogger:
@@ -411,10 +435,11 @@ def _print_queue_summary(
                     else:
                         print(f"  {expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
                 else:
+                    empty_mark = "∅"
                     if ref_info:
-                        print(f"  {expertise_mark} Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm")
+                        print(f"  {empty_mark} Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm")
                     else:
-                        print(f"  {expertise_mark} Depth {depth_idx}: [empty]")
+                        print(f"  {empty_mark} Depth {depth_idx}: [empty]")
 
 
 def _print_tronc_assignment(
@@ -562,44 +587,53 @@ def validate_structure(all_assignments: Dict[str, Dict], columns: Dict[str, floa
     return errors, warnings
 
 
-def summarize_assignments(all_assignments: Dict, castellers) -> Dict[str, int]:
-        # Print tronc position assignments first (structural order)
+def summarize_assignments(
+    all_assignments: Dict, 
+    castellers: pd.DataFrame,
+    columns: Dict[str, float],
+    column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
+    assignment_stats: Dict[str, Dict] = None,
+    peripheral_stats: Optional[Dict] = None
+) -> Dict[str, int]:
+    """Print comprehensive summary of all assignments."""
+    
+    # Print tronc position assignments first (structural order)
     for pos in ['baix', 'crossa', 'contrafort', 'agulla']:
         if pos in all_assignments:
-            _print_tronc_assignment(pos, all_assignments, columns, column_tronc_heights, castellers, assignment_stats.get(pos))
+            _print_tronc_assignment(
+                pos, all_assignments, columns, column_tronc_heights, 
+                castellers, assignment_stats.get(pos) if assignment_stats else None
+            )
 
-    # Then print queue summaries in requested order
+    # Then print queue summaries
     _print_queue_summary(all_assignments, castellers, columns, column_tronc_heights, peripheral_stats)
     
     # Validate
     errors, warnings = validate_structure(all_assignments, columns)
     
     if errors:
-        logger.error("="*60)
-        logger.error("CRITICAL STRUCTURAL ERRORS:")
+        print("="*60)
+        print("CRITICAL STRUCTURAL ERRORS:")
         for err in errors:
-            logger.error("✗ %s", err)
-        logger.error("="*60)
+            print(f"✗ {err}")
+        print("="*60)
     
     if warnings:
-        logger.warning("Warnings:")
+        print("Warnings:")
         for warn in warnings:
-            logger.warning("⚠%s", warn)
+            print(f"⚠ {warn}")
     
-    # Print unassigned castellers (name, height, expertise)
+    # Print unassigned castellers
     try:
-        # Extract all assigned names from all_assignments (source of truth)
         all_assigned_names = set()
         
         for pos, assignments in all_assignments.items():
             if pos in ['mans', 'daus', 'laterals']:
-                # Queue structure: {queue_id: [(name,), (name,), ...]}
                 for queue_id, depth_list in assignments.items():
                     for assignment in depth_list:
                         if assignment and assignment[0]:
                             all_assigned_names.add(assignment[0])
             else:
-                # Standard structure: {column: (name1, name2, ...)}
                 for col_assignments in assignments.values():
                     if col_assignments:
                         all_assigned_names.update(c for c in col_assignments if c)
@@ -615,10 +649,10 @@ def summarize_assignments(all_assignments: Dict, castellers) -> Dict[str, int]:
                 expertise = ', '.join([p for p in [pos1, pos2] if p])
                 height_str = f"{h:.1f} cm" if pd.notna(h) else "N/A"
                 print(f"  - {name:<25} {height_str:8}  expertise={expertise}")
-    except Exception:
-        # Non-fatal: don't break pipeline if unassigned reporting fails
-        logger.exception("Failed to compute unassigned castellers list")
-
+    except Exception as e:
+        print(f"Failed to compute unassigned castellers list: {e}")
+    
+    return {'total_assigned': len(all_assigned_names), 'total_unassigned': len(unassigned)}
 
 
 def create_final_panel(all_assignments: Dict, castellers, output_file: str) -> Panel:
