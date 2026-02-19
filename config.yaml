@@ -1,7 +1,11 @@
 # Castell Assignment Configuration
 # Tunable parameters for position and queue specifications
 display:
-  accent_color: "#d9944a"    # or "cyan", "rgb(0,215,255)", etc.
+  accent_color: "#d9944a"    # or "cyan", "rgb(0,215,255)", "#FA0", etc.
+  animation_enabled: true     # false disables spinner/gradient (useful for CI)
+  panel_title: "Castell Assignment Pipeline"
+  transient: false            # true erases the TUI panel on stop
+  refresh_per_second: 4       # TUI refresh rate (1-10)
 
 castell:
   # Column configuration (use exact column names: Rengla, Plena, Buida)
@@ -79,7 +83,7 @@ positions:
 
 queues:      # References: baix + segon (depth = 1); depth - 1 (depth > 1)
   mans:
-    max_depth: 5
+    max_depth: 4
     height_ratio_min: 0.50
     height_ratio_max: 0.60
     queue_height_ratio_min: 0.975
@@ -105,7 +109,7 @@ queues:      # References: baix + segon (depth = 1); depth - 1 (depth > 1)
     weight_preference: heavier
   
   laterals:
-    max_depth: 3
+    max_depth: 2
     height_ratio_min: 0.48
     height_ratio_max: 0.50
     queue_height_ratio_min: 0.975

@@ -3,13 +3,18 @@
 *.md
 !README.md
 *.pdf
+*.png
 
 # Notebooks
 *.ipynb
 
-# Input files
+# I/O files
 *.yaml
+*.json
 !config.yaml
+
+# requirements files
+requirements.txt
 
 ### PRE-DEFINED IGNORES ###
 
