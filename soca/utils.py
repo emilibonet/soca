@@ -173,36 +173,18 @@ def filter_available_castellers(castellers, all_assignments, base_db_unavailable
     """Return a filtered DataFrame of castellers excluding those already assigned
     in all_assignments and those flagged as unavailable in the base database.
 
-    CRITICAL FIX: all_assignments contains NAMES (str), not IDs. We must filter by name.
-    
-    - castellers: pd.DataFrame with casteller data
-    - all_assignments: mapping position_name -> {column -> tuple(names)} OR
-                       position_name -> {queue_id -> [tuple(names), ...]} for queues
-    - base_db_unavailable_flag: optional column name in castellers that if True/1 means not attending
-    """
-    # Collect assigned NAMES (not IDs)
-    assigned_names = set()
-    for pos_map in all_assignments.values():
-        if not isinstance(pos_map, dict):
-            continue
-        for col, assignments in pos_map.items():
-            if assignments is None:
-                continue
-            
-            # Handle queue structure: list of tuples
-            if isinstance(assignments, list):
-                for depth_tuple in assignments:
-                    if depth_tuple and isinstance(depth_tuple, tuple):
-                        for name in depth_tuple:
-                            if name is not None:
-                                assigned_names.add(str(name) if not isinstance(name, str) else name)
-            # Handle standard structure: single tuple
-            elif isinstance(assignments, tuple):
-                for name in assignments:
-                    if name is not None:
-                        assigned_names.add(str(name) if not isinstance(name, str) else name)
+    Handles both tronc ``{pos: {col: (name, ...)}}`` and queue
+    ``{queue_type: {queue_id: [(name,), ...]}}`` structures via the
+    unified ``_extract_names_from_assignments`` helper.
 
-    # Filter by name (not ID)
+    Parameters
+    ----------
+    castellers : pd.DataFrame
+    all_assignments : dict  (plain dict **or** AssignmentState.to_dict())
+    base_db_unavailable_flag : str, optional
+    """
+    assigned_names = _extract_names_from_assignments(all_assignments)
+
     df = castellers[~castellers['Nom complet'].isin(assigned_names)]
 
     if base_db_unavailable_flag is not None and base_db_unavailable_flag in df.columns:
@@ -211,19 +193,42 @@ def filter_available_castellers(castellers, all_assignments, base_db_unavailable
     return df
 
 
+def _extract_names_from_assignments(assignments: Dict[str, Dict]) -> set:
+    """Extract all assigned casteller names from an assignments dict.
+
+    Handles both tronc structure ``{pos: {col: (name, ...)}}`` and
+    queue structure ``{queue_type: {queue_id: [(name,), ...]}}``.
+    """
+    assigned: set = set()
+    for pos_map in assignments.values():
+        if not isinstance(pos_map, dict):
+            continue
+        for _col, value in pos_map.items():
+            if value is None:
+                continue
+            if isinstance(value, list):
+                # Queue: list of depth-tuples
+                for item in value:
+                    if isinstance(item, tuple):
+                        for name in item:
+                            if name is not None:
+                                assigned.add(str(name) if not isinstance(name, str) else name)
+                    elif isinstance(item, str) and item:
+                        assigned.add(item)
+            elif isinstance(value, tuple):
+                # Tronc: flat tuple of names
+                for name in value:
+                    if name is not None:
+                        assigned.add(str(name) if not isinstance(name, str) else name)
+    return assigned
+
+
 def _get_all_assigned_castellers(previous_assignments: Dict[str, Dict]) -> List[str]:
-    """Extract all assigned casteller names from previous assignments."""
-    
-    assigned = set()
-    
-    for position_name, assignment in previous_assignments.items():
-        for column, castellers in assignment.items():
-            if isinstance(castellers, (tuple, list)):
-                assigned.update(c for c in castellers if c is not None)
-            elif castellers is not None:
-                assigned.add(castellers)
-    
-    return list(assigned)
+    """Extract all assigned casteller names from previous assignments.
+
+    Handles both tronc (tuple) and queue (list of tuples) structures.
+    """
+    return list(_extract_names_from_assignments(previous_assignments))
 
 
 # Logging helpers

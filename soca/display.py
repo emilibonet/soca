@@ -10,8 +10,10 @@ from rich.text import Text
 from rich.panel import Panel
 import re
 import time
+import io
 import math
 import sys
+import threading
 
 console = Console()
 
@@ -38,6 +40,19 @@ def _rgb_lerp(a, b, t):
             _interp(a[2], b[2], t))
 
 
+# Style-string cache keyed on (r, g, b) — avoids repeated f-string allocation
+_STYLE_CACHE: Dict[Tuple[int, int, int], str] = {}
+
+
+def _rgb_style(r: int, g: int, b: int) -> str:
+    key = (r, g, b)
+    s = _STYLE_CACHE.get(key)
+    if s is None:
+        s = f"rgb({r},{g},{b})"
+        _STYLE_CACHE[key] = s
+    return s
+
+
 def _colored_text(message: str, phase: float,
                   base=(100, 180, 200), peak=(150, 220, 255),
                   spread=4.0) -> Text:
@@ -47,25 +62,56 @@ def _colored_text(message: str, phase: float,
     N = len(message)
     if N == 0:
         return Text()
-    
+
+    # Hoist lookups to locals
+    _exp = math.exp
+    _lerp = _rgb_lerp
+    _style = _rgb_style
+    spread_sq = spread * spread
+    inv_n = 1.0 / max(1, N - 1)
+
+    # Build runs of consecutive characters sharing the same style
     result = Text()
-    for i, ch in enumerate(message):
-        pos = i / max(1, N - 1)  # 0..1
-        # circular distance between pos and phase
+    prev_st: Optional[str] = None
+    buf: List[str] = []
+
+    for i in range(N):
+        pos = i * inv_n
         d = abs(pos - phase)
-        d = min(d, 1.0 - d)
-        intensity = math.exp(-(d * spread) ** 2)  # 0..1
-        r, g, b = _rgb_lerp(base, peak, intensity)
-        result.append(ch, style=f"rgb({r},{g},{b})")
-    
+        if d > 0.5:
+            d = 1.0 - d
+        intensity = _exp(-(d * d * spread_sq))
+        r, g, b = _lerp(base, peak, intensity)
+        st = _style(r, g, b)
+        if st == prev_st:
+            buf.append(message[i])
+        else:
+            if buf:
+                result.append("".join(buf), style=prev_st)
+            buf = [message[i]]
+            prev_st = st
+    if buf:
+        result.append("".join(buf), style=prev_st)
+
     return result
 
 
 class SectionManager:
     """Manages TUI sections with active spinner and dimmed completed sections."""
     
-    def __init__(self, accent_color: str = "cyan"):
+    def __init__(
+        self,
+        accent_color: str = "cyan",
+        animation_enabled: bool = True,
+        panel_title: str = "Castell Assignment Pipeline",
+        transient: bool = False,
+        refresh_per_second: int = 4,
+    ):
         self.accent_color = accent_color
+        self.animation_enabled = animation_enabled
+        self.panel_title = panel_title
+        self.transient = transient
+        self.refresh_per_second = max(1, refresh_per_second)
         self.base_rgb = self._parse_accent_color()
         self.peak_rgb = tuple(min(255, c + 50) for c in self.base_rgb)
         self.sections: List[Dict[str, Any]] = []
@@ -74,6 +120,14 @@ class SectionManager:
         self.section_logs: Dict[str, List[str]] = {}
         self._animation_phase = 0.0
         self._stop_animation = False
+        self._scroll_offset = 0
+        self._needs_update = False
+        self._last_render_time = 0
+        self._min_render_interval = 1.0 / self.refresh_per_second
+        self._cached_display: Optional[Panel] = None
+        self._last_section_count = 0
+        self._last_log_counts: Dict[str, int] = {}
+        self._lock = threading.Lock()
         
     def _get_spinner_frames(self):
         """Return spinner animation frames."""
@@ -83,16 +137,21 @@ class SectionManager:
         """Convert accent_color to RGB tuple."""
         color = self.accent_color
         
-        # Hex: #RRGGBB
+        # Hex: #RGB or #RRGGBB
         if color.startswith('#'):
-            color = color.lstrip('#')
-            return tuple(int(color[i:i+2], 16) for i in (0, 2, 4))
+            hex_str = color[1:]  # strip exactly one '#'
+            if len(hex_str) == 3:
+                # Expand short form: #FAB → #FFAABB
+                hex_str = hex_str[0]*2 + hex_str[1]*2 + hex_str[2]*2
+            if len(hex_str) != 6 or not all(c in '0123456789abcdefABCDEF' for c in hex_str):
+                return (100, 180, 200)  # fallback for malformed hex
+            return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
         
         # RGB: rgb(r,g,b)
         if color.startswith('rgb'):
             match = re.findall(r'\d+', color)
             if len(match) == 3:
-                return tuple(int(x) for x in match)
+                return tuple(min(255, max(0, int(x))) for x in match)
         
         # Named colors - common ones
         named = {
@@ -119,17 +178,27 @@ class SectionManager:
             text.append(section['title'], style="red")
         elif is_current:
             # Current - animated spinner with gradient
-            frame_idx = int(time.time() * 10) % len(self._get_spinner_frames())
-            spinner = self._get_spinner_frames()[frame_idx]
-            text.append(f"{spinner} ", style=f"bold {self.accent_color}")
-            
-            # Add gradient animation to title
-            self._animation_phase = (time.time() * 0.5) % 1.0
-            gradient_text = _colored_text(
-                section['title'], self._animation_phase,
-                base=self.base_rgb, peak=self.peak_rgb
-            )
-            text.append(gradient_text)
+            if self.animation_enabled:
+                frame_idx = int(time.time() * 10) % len(self._get_spinner_frames())
+                spinner = self._get_spinner_frames()[frame_idx]
+                text.append(f"{spinner} ", style=f"bold {self.accent_color}")
+                
+                # Add gradient animation to title (2s sweep + 1s pause)
+                cycle = (time.time() % 3.0) / 3.0   # 0..1 over 3 seconds
+                # First 2/3 of the cycle: sweep (phase 0→1)
+                # Last  1/3 of the cycle: hold at base (phase parked off-screen)
+                if cycle < 2.0 / 3.0:
+                    self._animation_phase = cycle * 1.5   # 0→1 in 2s
+                else:
+                    self._animation_phase = -1.0           # off-screen → all base
+                gradient_text = _colored_text(
+                    section['title'], self._animation_phase,
+                    base=self.base_rgb, peak=self.peak_rgb
+                )
+                text.append(gradient_text)
+            else:
+                text.append("● ", style=f"bold {self.accent_color}")
+                text.append(section['title'], style=f"{self.accent_color}")
         else:
             # Pending - dimmed
             text.append("○ ", style="dim")
@@ -157,77 +226,216 @@ class SectionManager:
         
         return rendered
     
-    def _render_display(self) -> Panel:
-        """Render the complete display."""
-        content = Text()
-        
+    def _build_all_lines(self) -> List[Text]:
+        """Build all renderable lines (headers + logs + spacing)."""
+        lines: List[Text] = []
+
         for i, section in enumerate(self.sections):
             is_current = (section['title'] == self.current_section)
-            
-            # Add section header
-            content.append(self._render_section(section, is_current))
-            content.append("\n")
-            
-            # Show logs for ACTIVE sections, FAILED sections, or warnings from COMPLETED sections
+            lines.append(self._render_section(section, is_current))
+
             show_logs = (
                 (is_current and section['status'] == 'active') or
                 section['status'] == 'failed' or
-                (section['status'] == 'completed' and self.section_logs.get(section['title'], []))
+                (section['status'] == 'completed'
+                 and self.section_logs.get(section['title'], []))
             )
-            
             if show_logs:
-                for log_line in self._render_logs(section['title']):
-                    content.append(log_line)
-                    content.append("\n")
-            
-            # Add spacing between sections (but not after last one)
+                lines.extend(self._render_logs(section['title']))
+
+            # Spacing between sections (not after the last one)
             if i < len(self.sections) - 1:
+                lines.append(Text(""))
+
+        return lines
+
+    def _render_display(self) -> Panel:
+        """Render the display, bounded to terminal height with auto-scroll."""
+        all_lines = self._build_all_lines()
+        total = len(all_lines)
+
+        # Panel overhead: top border, padding-top, padding-bottom, bottom border
+        # = 4 lines.  Title occupies the top border line so no extra cost.
+        panel_overhead = 4
+        terminal_h = console.height or 24
+        available = max(3, terminal_h - panel_overhead)
+
+        if total <= available:
+            # Everything fits — render normally
+            visible = all_lines
+            truncated_above = 0
+        else:
+            # Determine view window
+            if self._scroll_offset == 0:
+                # Auto-follow: show the last `available` lines
+                start = total - available
+            else:
+                start = max(0, total - available - self._scroll_offset)
+            end = start + available
+            visible = all_lines[start:end]
+            truncated_above = start
+
+        content = Text()
+        if truncated_above > 0:
+            hint = Text(
+                f"  ↑ {truncated_above} more line"
+                f"{'s' if truncated_above != 1 else ''} above",
+                style="dim italic",
+            )
+            content.append(hint)
+            content.append("\n")
+
+        for idx, line in enumerate(visible):
+            content.append(line)
+            if idx < len(visible) - 1:
                 content.append("\n")
-        
+
+        # Show hint when scrolled up and there are lines below
+        if self._scroll_offset > 0 and total > available:
+            start = max(0, total - available - self._scroll_offset)
+            actual_below = max(0, total - (start + available))
+            if actual_below > 0:
+                content.append("\n")
+                content.append(
+                    Text(
+                        f"  ↓ {actual_below} more line"
+                        f"{'s' if actual_below != 1 else ''} below",
+                        style="dim italic",
+                    )
+                )
+
         return Panel(
             content,
-            title="[bold]Castell Assignment Pipeline[/]",
+            title=f"[bold]{self.panel_title}[/]",
             border_style=self.accent_color,
-            padding=(1, 2)
+            padding=(1, 2),
         )
+
+    def scroll_up(self, lines: int = 3):
+        """Scroll up (towards older content)."""
+        with self._lock:
+            all_lines = self._build_all_lines()
+            terminal_h = console.height or 24
+            available = max(3, terminal_h - 4)
+            max_offset = max(0, len(all_lines) - available)
+            self._scroll_offset = min(max_offset, self._scroll_offset + lines)
+            self._needs_update = True
+
+    def scroll_down(self, lines: int = 3):
+        """Scroll down (towards newer content). 0 = auto-follow."""
+        with self._lock:
+            self._scroll_offset = max(0, self._scroll_offset - lines)
+            self._needs_update = True
     
     def start(self):
         """Start the live display."""
-        # Redirect stdout/stderr to suppress external prints
-        self._original_stdout = sys.stdout
-        self._original_stderr = sys.stderr
-        
         self.live = Live(
             self._render_display(),
             console=console,
-            refresh_per_second=20,  # Higher refresh for smooth gradient
-            transient=False  # Clear on stop
+            refresh_per_second=self.refresh_per_second,
+            transient=self.transient,
         )
         self.live.start()
         
-        import threading
         def _animation_loop():
-            import time
+            """Highly optimized animation loop - minimal updates."""
             while not self._stop_animation:
-                time.sleep(1/30)  # 30fps
-                try:
-                    if self.live and not self._stop_animation:
-                        self.live.update(self._render_display())
-                except Exception:
-                    break
+                current_time = time.time()
+                
+                # Only update animation if there's an active section
+                with self._lock:
+                    if self.current_section and self.animation_enabled:
+                        # Check if enough time has passed
+                        if current_time - self._last_render_time >= self._min_render_interval:
+                            self._needs_update = True
+                            self._last_render_time = current_time
+                    
+                    should_update = self._needs_update
+                
+                # Only render if something actually changed
+                if should_update:
+                    try:
+                        if self.live and not self._stop_animation:
+                            self.live.update(self._render_display())
+                            with self._lock:
+                                self._needs_update = False
+                    except Exception:
+                        break
+                
+                # Longer sleep when idle or animations disabled to save CPU
+                if not self.animation_enabled:
+                    sleep_time = 0.5
+                elif self.current_section:
+                    sleep_time = self._min_render_interval
+                else:
+                    sleep_time = 0.5
+                time.sleep(sleep_time)
 
         self._animation_thread = threading.Thread(target=_animation_loop, daemon=True)
         self._animation_thread.start()
+
+        # Keyboard listener for scroll (non-blocking stdin reader)
+        def _key_loop():
+            import tty, termios, select
+            fd = sys.stdin.fileno()
+            try:
+                old_settings = termios.tcgetattr(fd)
+            except termios.error:
+                return  # not a real terminal
+            try:
+                tty.setcbreak(fd)
+                while not self._stop_animation:
+                    if select.select([sys.stdin], [], [], 0.05)[0]:
+                        ch = sys.stdin.read(1)
+                        if ch == '\x1b':  # escape sequence
+                            if select.select([sys.stdin], [], [], 0.05)[0]:
+                                ch2 = sys.stdin.read(1)
+                                if ch2 == '[':
+                                    if select.select([sys.stdin], [], [], 0.05)[0]:
+                                        ch3 = sys.stdin.read(1)
+                                        if ch3 == 'A':  # Up arrow
+                                            self.scroll_up(1)
+                                        elif ch3 == 'B':  # Down arrow
+                                            self.scroll_down(1)
+                                        elif ch3 == '5':  # Page Up
+                                            sys.stdin.read(1)  # consume ~
+                                            self.scroll_up(10)
+                                        elif ch3 == '6':  # Page Down
+                                            sys.stdin.read(1)  # consume ~
+                                            self.scroll_down(10)
+                        elif ch in ('k', 'K'):
+                            self.scroll_up(1)
+                        elif ch in ('j', 'J'):
+                            self.scroll_down(1)
+                        elif ch in ('g', 'G'):
+                            # G = bottom (auto-follow), g = top
+                            if ch == 'g':
+                                with self._lock:
+                                    all_lines = self._build_all_lines()
+                                    terminal_h = console.height or 24
+                                    available = max(3, terminal_h - 4)
+                                    self._scroll_offset = max(0, len(all_lines) - available)
+                                    self._needs_update = True
+                            else:
+                                with self._lock:
+                                    self._scroll_offset = 0
+                                    self._needs_update = True
+            except Exception:
+                pass
+            finally:
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                except Exception:
+                    pass
+
+        self._key_thread = threading.Thread(target=_key_loop, daemon=True)
+        self._key_thread.start()
     
     def stop(self):
         """Stop the live display."""
-        self._stop_animation = True  # ADD
+        self._stop_animation = True
         if self.live:
             self.live.stop()
-
-        # Restore stdout/stderr
-        sys.stdout = self._original_stdout
-        sys.stderr = self._original_stderr
     
     def add_section(self, title: str):
         """Add a new section to the display."""
@@ -246,7 +454,8 @@ class SectionManager:
         if not section_exists:
             self.add_section(title)
         
-        self.current_section = title
+        with self._lock:
+            self.current_section = title
         
         for section in self.sections:
             if section['title'] == title:
@@ -254,8 +463,7 @@ class SectionManager:
                 section['start_time'] = time.time()
                 break
         
-        if self.live:
-            self.live.update(self._render_display())
+        self._needs_update = True
     
     def complete_section(self, title: str):
         """Mark a section as completed (show checkmark, clear logs except warnings)."""
@@ -270,11 +478,10 @@ class SectionManager:
             warnings = [log for log in self.section_logs[title] if log.startswith('⚠')]
             self.section_logs[title] = warnings
         
-        if self.current_section == title:
-            self.current_section = None
-        
-        if self.live:
-            self.live.update(self._render_display())
+        with self._lock:
+            if self.current_section == title:
+                self.current_section = None
+            self._needs_update = True
 
     def fail_section(self, title: str):
         """Mark a section as failed."""
@@ -283,21 +490,23 @@ class SectionManager:
                 section['status'] = 'failed'
                 section['end_time'] = time.time()
                 break
-        if self.current_section == title:
-            self.current_section = None
-        
-        if self.live:
-            self.live.update(self._render_display())
+        with self._lock:
+            if self.current_section == title:
+                self.current_section = None
+            self._needs_update = True
 
     def log(self, message: str, section: Optional[str] = None):
         """Add a log message to the current or specified section."""
         target_section = section or self.current_section
         
         if target_section and target_section in self.section_logs:
-            self.section_logs[target_section].append(message)
-            
-            if self.live:
-                self.live.update(self._render_display())
+            with self._lock:
+                self.section_logs[target_section].append(message)
+                
+                # Reset scroll to auto-follow when new log arrives
+                self._scroll_offset = 0
+                
+                self._needs_update = True
     
     @contextmanager
     def section(self, title: str):
@@ -355,9 +564,18 @@ def _print_queue_summary(
     castellers: pd.DataFrame,
     columns: Dict[str, float],
     column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
-    peripheral_stats: Optional[Dict[str, Dict]] = None
+    peripheral_stats: Optional[Dict[str, Dict]] = None,
+    preassigned_names: Optional[set] = None,
+    preassigned_swapped_names: Optional[set] = None,
+    failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
 ):
-    """Print formatted summary of queue assignments with reference/target info."""
+    """Generate formatted summary of queue assignments with reference/target info."""
+    if preassigned_names is None:
+        preassigned_names = set()
+    if preassigned_swapped_names is None:
+        preassigned_swapped_names = set()
+    if failed_preassignments is None:
+        failed_preassignments = {}
 
     queue_mappings = {
         'mans': MANS_QUEUE_SPECS,
@@ -376,12 +594,12 @@ def _print_queue_summary(
             stats_for_queue = peripheral_stats.get(queue_type)
 
         if stats_for_queue and isinstance(stats_for_queue, dict) and 'final_score' in stats_for_queue:
-            print(f"\n##### {queue_type.upper()} #####   score={stats_for_queue['final_score']:.2f}")
+            yield f"\n##### {queue_type.upper()} #####   score={stats_for_queue['final_score']:.2f}\n"
         else:
-            print(f"\n##### {queue_type.upper()} #####")
+            yield f"\n##### {queue_type.upper()} #####\n"
 
         for queue_id, depth_list in all_assignments[queue_type].items():
-            print(f"\n{queue_id}:")
+            yield f"\n{queue_id}:\n"
 
             for depth_idx, assignment in enumerate(depth_list, start=1):
                 # Compute reference and target where possible
@@ -416,10 +634,24 @@ def _print_queue_summary(
                     has_expertise = any(kw.lower() in pos1 or kw.lower() in pos2 
                                            for kw in expertise_keywords)
                     expertise_mark = "★" if has_expertise else " "
+
+                    # Determine replacement info for this slot
+                    replaced_name = failed_preassignments.get(queue_type, {}).get(queue_id, {}).get(depth_idx - 1)
+                    replaces_note = ""
+                    is_replacement = replaced_name is not None and name not in preassigned_names
+                    if is_replacement:
+                        replaces_note = f"  ─ replaces {replaced_name}"
+
+                    # Pin mark: ⌖ = preassigned here, ⇆ = replaces a failed preassignment
+                    if name in preassigned_names:
+                        pin_mark = "⌖ "
+                    elif is_replacement:
+                        pin_mark = "⇆ "
+                    else:
+                        pin_mark = "  "
                     
                     # Compute per-person penalty (raw score scaled if queue stats provide factor)
                     try:
-                        candidate_row = castellers[castellers['Nom complet'] == name].iloc[0]
                         pos_spec = None
                         if queue_spec is not None:
                             pos_spec = create_position_spec_from_queue(queue_spec, depth_idx)
@@ -431,15 +663,17 @@ def _print_queue_summary(
                         raw_score = 0.0
 
                     if ref_info:
-                        print(f"  {expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm   penalty={raw_score:.2f}")
+                        yield f"{pin_mark}{expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm   penalty={raw_score:.2f}{replaces_note}\n"
                     else:
-                        print(f"  {expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
+                        yield f"{pin_mark}{expertise_mark} Depth {depth_idx}: {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}{replaces_note}\n"
                 else:
                     empty_mark = "∅"
+                    missing_name = failed_preassignments.get(queue_type, {}).get(queue_id, {}).get(depth_idx - 1)
+                    missing_note = f"             ─ missing {missing_name}" if missing_name else ""
                     if ref_info:
-                        print(f"  {empty_mark} Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm")
+                        yield f"  {empty_mark} Depth {depth_idx}: [empty]   ref={ref_info[0]:.1f} cm target={ref_info[1]:.1f}─{ref_info[2]:.1f} cm{missing_note}\n"
                     else:
-                        print(f"  {empty_mark} Depth {depth_idx}: [empty]")
+                        yield f"  {empty_mark} Depth {depth_idx}: [empty]{missing_note}\n"
 
 
 def _print_tronc_assignment(
@@ -448,9 +682,18 @@ def _print_tronc_assignment(
     columns: Dict[str, float],
     column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
     castellers: pd.DataFrame,
-    position_stats: Optional[Dict] = None
+    position_stats: Optional[Dict] = None,
+    preassigned_names: Optional[set] = None,
+    preassigned_swapped_names: Optional[set] = None,
+    failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
 ):
-    """Print tronc position assignments."""
+    """Generate tronc position assignments."""
+    if preassigned_names is None:
+        preassigned_names = set()
+    if preassigned_swapped_names is None:
+        preassigned_swapped_names = set()
+    if failed_preassignments is None:
+        failed_preassignments = {}
     from .data import POSITION_SPECS
     
     if position_name not in POSITION_SPECS:
@@ -473,18 +716,17 @@ def _print_tronc_assignment(
         # Use column base heights as the reference for positions like 'baix'
         reference_heights = {col: float(h) for col, h in columns.items()}
     
-    print(f"\n##### {position_name.upper()} #####")
+    yield f"\n##### {position_name.upper()} #####\n"
     if position_stats and isinstance(position_stats, dict) and 'final_score' in position_stats:
-        print(f"  score={position_stats['final_score']:.2f}")
+        yield f"  score={position_stats['final_score']:.2f}\n"
     
     for col_name, assigned in all_assignments[position_name].items():
-        print(f"\n{col_name}:")
-        
+        yield f"\n{col_name}:\n"
         if reference_heights and col_name in reference_heights:
             ref_height = reference_heights[col_name]
             min_target = ref_height * position_spec.height_ratio_min
             max_target = ref_height * position_spec.height_ratio_max
-            print(f"  ref={ref_height:.1f} cm   target={min_target:.1f}─{max_target:.1f} cm")
+            yield f"  ref={ref_height:.1f} cm   target={min_target:.1f}─{max_target:.1f} cm\n"
         
         for i, name in enumerate(assigned, 1):
             if name:
@@ -497,6 +739,21 @@ def _print_tronc_assignment(
                 has_expertise = any(kw.lower() in pos1 or kw.lower() in pos2 
                                    for kw in position_spec.expertise_keywords)
                 expertise_mark = "★" if has_expertise else " "
+
+                # Determine replacement info for this slot
+                replaced_name = failed_preassignments.get(position_name, {}).get(col_name, {}).get(i - 1)
+                replaces_note = ""
+                is_replacement = replaced_name is not None and name not in preassigned_names
+                if is_replacement:
+                    replaces_note = f"  ─ replaces {replaced_name}"
+
+                # Pin mark: ⌖ = preassigned here, ⇆ = replaces a failed preassignment
+                if name in preassigned_names:
+                    pin_mark = "⌖ "
+                elif is_replacement:
+                    pin_mark = "⇆ "
+                else:
+                    pin_mark = "  "
                 
                 # Compute per-person penalty using position spec and reference height
                 try:
@@ -508,9 +765,9 @@ def _print_tronc_assignment(
 
                 if reference_heights:
                     ratio_pct = (h / reference_heights[col_name]) * 100
-                    print(f"  {expertise_mark} {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%   penalty={raw_score:.2f}")
+                    yield f"{pin_mark}{expertise_mark} {name:<16} {h:3.0f} cm   {ratio_pct:5.1f}%   penalty={raw_score:.2f}{replaces_note}\n"
                 else:
-                    print(f"  {name:<16} {h:3.0f} cm   penalty={raw_score:.2f}")
+                    yield f"{pin_mark}{name:<16} {h:3.0f} cm   penalty={raw_score:.2f}{replaces_note}\n"
 
 
 def validate_structure(all_assignments: Dict[str, Dict], columns: Dict[str, float]) -> Tuple[List[str], List[str]]:
@@ -593,35 +850,56 @@ def summarize_assignments(
     columns: Dict[str, float],
     column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
     assignment_stats: Dict[str, Dict] = None,
-    peripheral_stats: Optional[Dict] = None
-) -> Dict[str, int]:
-    """Print comprehensive summary of all assignments."""
+    peripheral_stats: Optional[Dict] = None,
+    preassigned_names: Optional[set] = None,
+    preassigned_swapped_names: Optional[set] = None,
+    failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
+) -> str:
+    """Generate comprehensive summary of all assignments as a string."""
+    if preassigned_names is None:
+        preassigned_names = set()
+    if preassigned_swapped_names is None:
+        preassigned_swapped_names = set()
+    if failed_preassignments is None:
+        failed_preassignments = {}
+    
+    output = io.StringIO()
     
     # Print tronc position assignments first (structural order)
     for pos in ['baix', 'crossa', 'contrafort', 'agulla']:
         if pos in all_assignments:
-            _print_tronc_assignment(
+            for line in _print_tronc_assignment(
                 pos, all_assignments, columns, column_tronc_heights, 
-                castellers, assignment_stats.get(pos) if assignment_stats else None
-            )
+                castellers, assignment_stats.get(pos) if assignment_stats else None,
+                preassigned_names=preassigned_names,
+                preassigned_swapped_names=preassigned_swapped_names,
+                failed_preassignments=failed_preassignments,
+            ):
+                output.write(line)
 
     # Then print queue summaries
-    _print_queue_summary(all_assignments, castellers, columns, column_tronc_heights, peripheral_stats)
+    for line in _print_queue_summary(
+        all_assignments, castellers, columns, column_tronc_heights,
+        peripheral_stats, preassigned_names=preassigned_names,
+        preassigned_swapped_names=preassigned_swapped_names,
+        failed_preassignments=failed_preassignments,
+    ):
+        output.write(line)
     
     # Validate
     errors, warnings = validate_structure(all_assignments, columns)
     
     if errors:
-        print("="*60)
-        print("CRITICAL STRUCTURAL ERRORS:")
+        output.write("="*60 + "\n")
+        output.write("CRITICAL STRUCTURAL ERRORS:\n")
         for err in errors:
-            print(f"✗ {err}")
-        print("="*60)
+            output.write(f"✗ {err}\n")
+        output.write("="*60 + "\n")
     
     if warnings:
-        print("Warnings:")
+        output.write("Warnings:\n")
         for warn in warnings:
-            print(f"⚠ {warn}")
+            output.write(f"⚠ {warn}\n")
     
     # Print unassigned castellers
     try:
@@ -640,7 +918,7 @@ def summarize_assignments(
         
         unassigned = castellers[~castellers['Nom complet'].isin(all_assigned_names)]
         if not unassigned.empty:
-            print("\n##### UNASSIGNED CASTELLERS #####")
+            output.write("\n##### UNASSIGNED CASTELLERS #####\n")
             for _, row in unassigned.iterrows():
                 name = row.get('Nom complet', '')
                 h = row.get('Alçada (cm)', None)
@@ -648,11 +926,11 @@ def summarize_assignments(
                 pos2 = row.get('Posició 2', '')
                 expertise = ', '.join([p for p in [pos1, pos2] if p])
                 height_str = f"{h:.1f} cm" if pd.notna(h) else "N/A"
-                print(f"  - {name:<25} {height_str:8}  expertise={expertise}")
+                output.write(f"  - {name:<25} {height_str:8}  expertise={expertise}\n")
     except Exception as e:
-        print(f"Failed to compute unassigned castellers list: {e}")
+        output.write(f"Failed to compute unassigned castellers list: {e}\n")
     
-    return {'total_assigned': len(all_assigned_names), 'total_unassigned': len(unassigned)}
+    return output.getvalue()
 
 
 def create_final_panel(all_assignments: Dict, castellers, output_file: str) -> Panel:
