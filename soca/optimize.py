@@ -112,7 +112,11 @@ def find_optimal_assignment(
             tui_log.warning(f"No available candidates for {position_spec.position_name}")
         else:
             logger.warning("No available candidates for %s", position_spec.position_name)
-        return {col_name: () for col_name in columns.keys()}
+        empty = {col_name: () for col_name in columns.keys()}
+        if return_stats:
+            return empty, {'method': optimization_method, 'final_score': 0.0,
+                           'shortage': requested, 'shortage_pct': 100.0}
+        return empty
 
     # Shortage penalty factor — reduces quality penalties under scarcity (manual §2.2)
     if available_count >= requested:
@@ -829,52 +833,59 @@ def simulated_annealing_assignment(
     logger.info("Starting simulated annealing (initial score: %.2f)", current_score)
     
     # Annealing loop
-    while temperature > min_temp:
-        for _ in range(iterations_per_temp):
-            total_iterations += 1
-            
-            # Generate neighbor solution
-            neighbor = _generate_neighbor_assignment(
-                current_solution, column_names, candidate_names, position_spec.count_per_column
-            )
-            
-            # Score neighbor
-            neighbor_score = _score_complete_assignment(
-                neighbor, reference_heights, position_spec,
-                castellers, columns, use_weight, shortage_factor
-            )
-            
-            # Decide whether to accept neighbor
-            delta = neighbor_score - current_score
-            
-            if delta < 0:
-                # Better solution - always accept
-                current_solution = neighbor
-                current_score = neighbor_score
+    interrupted = False
+    try:
+        while temperature > min_temp:
+            for _ in range(iterations_per_temp):
+                total_iterations += 1
                 
-                # Update best if necessary
-                if current_score < best_score:
-                    best_solution = current_solution.copy()
-                    best_score = current_score
-            else:
-                # Worse solution - accept probabilistically
-                acceptance_probability = math.exp(-delta / temperature)
+                # Generate neighbor solution
+                neighbor = _generate_neighbor_assignment(
+                    current_solution, column_names, candidate_names, position_spec.count_per_column
+                )
                 
-                if random.random() < acceptance_probability:
+                # Score neighbor
+                neighbor_score = _score_complete_assignment(
+                    neighbor, reference_heights, position_spec,
+                    castellers, columns, use_weight, shortage_factor
+                )
+                
+                # Decide whether to accept neighbor
+                delta = neighbor_score - current_score
+                
+                if delta < 0:
+                    # Better solution - always accept
                     current_solution = neighbor
                     current_score = neighbor_score
-        
-        # Cool down
-        iteration += 1
-        temperature *= cooling_rate
-        
-        # Progress report only every 1000 total iterations
-        if total_iterations % 1000 == 0:
-            logger.info("Progress: %d iterations, best=%.2f", total_iterations, best_score)
-            stats['progress'].append((total_iterations, best_score))
+                    
+                    # Update best if necessary
+                    if current_score < best_score:
+                        best_solution = current_solution.copy()
+                        best_score = current_score
+                else:
+                    # Worse solution - accept probabilistically
+                    acceptance_probability = math.exp(-delta / temperature)
+                    
+                    if random.random() < acceptance_probability:
+                        current_solution = neighbor
+                        current_score = neighbor_score
+            
+            # Cool down
+            iteration += 1
+            temperature *= cooling_rate
+            
+            # Progress report only every 1000 total iterations
+            if total_iterations % 1000 == 0:
+                logger.info("Progress: %d iterations, best=%.2f", total_iterations, best_score)
+                stats['progress'].append((total_iterations, best_score))
+    except KeyboardInterrupt:
+        interrupted = True
+        logger.info("Interrupted — returning best solution after %d iterations", total_iterations)
     
     stats['iterations'] = total_iterations
     stats['final_score'] = best_score
+    if interrupted:
+        stats['stop_reason'] = 'keyboard interrupt'
     
     logger.info("Completed in %d iterations (score: %.2f)", total_iterations, best_score)
     
@@ -933,19 +944,25 @@ def _generate_neighbor_assignment(
     # Get unassigned candidates
     unassigned = [c for c in all_candidates if c not in all_assigned]
     
-    # Choose a random move type
-    move_types = ['swap_between_columns', 'swap_within_column', 'replace_with_unassigned']
-    weights = [0.5, 0.2, 0.3]  # Prefer swaps between columns
-    
-    if count_per_column == 1:
-        # Can't swap within column if only 1 per column
-        move_types.remove('swap_within_column')
-        weights = [0.6, 0.4]
-    
-    if not unassigned:
-        # No unassigned candidates
-        move_types.remove('replace_with_unassigned')
-        weights = [0.7, 0.3] if count_per_column > 1 else [1.0]
+    # Build list of possible move types based on current state
+    move_types = []
+    weights = []
+
+    if len(column_names) >= 2:
+        move_types.append('swap_between_columns')
+        weights.append(0.5)
+
+    if count_per_column > 1:
+        move_types.append('swap_within_column')
+        weights.append(0.2)
+
+    if unassigned:
+        move_types.append('replace_with_unassigned')
+        weights.append(0.3)
+
+    if not move_types:
+        # No valid moves possible
+        return {col: tuple(assigned) for col, assigned in neighbor.items()}
     
     move_type = random.choices(move_types, weights=weights)[0]
     
@@ -1044,7 +1061,7 @@ def adaptive_simulated_annealing_assignment(
         ))
     
     # Set initial temperature to ~2x standard deviation of scores
-    temperature = np.std(sample_scores) * 2
+    temperature = max(np.std(sample_scores) * 2, 1e-6)
     
     if tui_log:
         tui_log.info(f"Starting adaptive annealing (initial score: {current_score:.2f})")
@@ -1056,94 +1073,108 @@ def adaptive_simulated_annealing_assignment(
     acceptance_count = 0
     evaluation_window = 100
     
-    while iteration < max_iterations:
-        iteration += 1
-        
-        # Generate and evaluate neighbor
-        neighbor = _generate_neighbor_assignment(
-            current_solution, column_names, candidate_names, position_spec.count_per_column
-        )
-        neighbor_score = _score_complete_assignment(
-            neighbor, reference_heights, position_spec,
-            castellers, columns, use_weight, shortage_factor
-        )
-        
-        # Acceptance decision
-        delta = neighbor_score - current_score
-        
-        if delta < 0:
-            # Better solution
-            current_solution = neighbor
-            current_score = neighbor_score
-            acceptance_count += 1
-            no_improvement_count = 0
+    interrupted = False
+    try:
+        while iteration < max_iterations:
+            iteration += 1
             
-            if current_score < best_score:
-                best_solution = current_solution.copy()
-                best_score = current_score
-                # Removed verbose best iteration logging
-        else:
-            # Worse solution - probabilistic acceptance
-            acceptance_prob = math.exp(-delta / temperature)
+            # Generate and evaluate neighbor
+            neighbor = _generate_neighbor_assignment(
+                current_solution, column_names, candidate_names, position_spec.count_per_column
+            )
+            neighbor_score = _score_complete_assignment(
+                neighbor, reference_heights, position_spec,
+                castellers, columns, use_weight, shortage_factor
+            )
             
-            if random.random() < acceptance_prob:
+            # Acceptance decision
+            delta = neighbor_score - current_score
+            
+            if delta < 0:
+                # Better solution
                 current_solution = neighbor
                 current_score = neighbor_score
                 acceptance_count += 1
-            
-            no_improvement_count += 1
-        
-        # Adaptive cooling every 'evaluation_window' iterations
-        if iteration % evaluation_window == 0:
-            acceptance_rate = acceptance_count / evaluation_window
-            
-            # Adjust cooling based on acceptance rate
-            # Target: 20-40% acceptance rate
-            if acceptance_rate > 0.4:
-                # Accepting too much - cool faster
-                temperature *= 0.85
-            elif acceptance_rate < 0.2:
-                # Too picky - cool slower (or heat up slightly)
-                temperature *= 0.98
+                no_improvement_count = 0
+                
+                if current_score < best_score:
+                    best_solution = current_solution.copy()
+                    best_score = current_score
             else:
-                # Good range - normal cooling
-                temperature *= 0.9
-            
-            # Only log progress every 1000 iterations
-            if iteration % 1000 == 0:
-                stats['progress'].append((iteration, best_score))
-                if tui_log:
-                    tui_log.info(f"Progress: {iteration} iterations, best={best_score:.2f}")
+                # Worse solution - probabilistic acceptance
+                if temperature > 0:
+                    acceptance_prob = math.exp(-delta / temperature)
                 else:
-                    logger.info("Progress: %d iterations, best=%.2f", iteration, best_score)
+                    acceptance_prob = 0.0
+                
+                if random.random() < acceptance_prob:
+                    current_solution = neighbor
+                    current_score = neighbor_score
+                    acceptance_count += 1
+                
+                no_improvement_count += 1
             
-            acceptance_count = 0
-        
-        # Stop if stuck for too long
-        if no_improvement_count > 1000:
-            stats['stop_reason'] = 'no improvement (1000 iters)'
-            if tui_log:
-                tui_log.info("No improvement for 1000 iterations - stopping early")
-            else:
-                logger.info("No improvement for 1000 iterations - stopping early")
-            break
-        
-        # Stop if temperature too low
-        if temperature < 0.01:
-            stats['stop_reason'] = 'temperature too low'
-            if tui_log:
-                tui_log.info("Temperature too low - stopping")
-            else:
-                logger.info("Temperature too low - stopping")
-            break
+            # Adaptive cooling every 'evaluation_window' iterations
+            if iteration % evaluation_window == 0:
+                acceptance_rate = acceptance_count / evaluation_window
+                
+                # Adjust cooling based on acceptance rate
+                # Target: 20-40% acceptance rate
+                if acceptance_rate > 0.4:
+                    # Accepting too much - cool faster
+                    temperature *= 0.85
+                elif acceptance_rate < 0.2:
+                    # Too picky - cool slower (or heat up slightly)
+                    temperature *= 0.98
+                else:
+                    # Good range - normal cooling
+                    temperature *= 0.9
+                
+                # Only log progress every 1000 iterations
+                if iteration % 1000 == 0:
+                    stats['progress'].append((iteration, best_score))
+                    if tui_log:
+                        tui_log.info(f"Progress: {iteration} iterations, best={best_score:.2f}")
+                    else:
+                        logger.info("Progress: %d iterations, best=%.2f", iteration, best_score)
+                
+                acceptance_count = 0
+            
+            # Stop if stuck for too long
+            if no_improvement_count > 1000:
+                stats['stop_reason'] = 'no improvement (1000 iters)'
+                if tui_log:
+                    tui_log.info("No improvement for 1000 iterations - stopping early")
+                else:
+                    logger.info("No improvement for 1000 iterations - stopping early")
+                break
+            
+            # Stop if temperature too low
+            if temperature < 0.01:
+                stats['stop_reason'] = 'temperature too low'
+                if tui_log:
+                    tui_log.info("Temperature too low - stopping")
+                else:
+                    logger.info("Temperature too low - stopping")
+                break
+    except KeyboardInterrupt:
+        interrupted = True
+        _msg = f"Interrupted — returning best solution after {iteration} iterations (score: {best_score:.2f})"
+        if tui_log:
+            tui_log.info(_msg)
+        else:
+            logger.info(_msg)
     
     stats['iterations'] = iteration
     stats['final_score'] = best_score
+    if interrupted:
+        stats['stop_reason'] = 'keyboard interrupt'
     
-    if tui_log:
-        tui_log.info(f"Completed in {iteration} iterations (score: {best_score:.2f})")
-    else:
-        logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
+    if not interrupted:
+        if tui_log:
+            tui_log.info(f"Completed in {iteration} iterations (score: {best_score:.2f})")
+        else:
+            logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
     
     return best_solution, stats
 
@@ -1288,12 +1319,23 @@ def global_peripheral_optimization(
     column_tronc_heights: Optional[Dict[str, Dict[str, float]]],
     all_assignments: Dict,
     use_weight: bool = True,
-    max_iterations: int = 10000
+    max_iterations: int = 10000,
+    locked_positions: Optional[Dict[str, Dict[int, Tuple[str, ...]]]] = None,
 ) -> Tuple[Dict[str, Dict[str, List[Tuple[str, ...]]]], Dict]:
-    """Global optimization across mans, daus, and laterals simultaneously."""
+    """Global optimization across mans, daus, and laterals simultaneously.
+
+    Parameters
+    ----------
+    locked_positions : dict, optional
+        ``{spec_key: {depth_idx: (name,)}}`` — depths that must not be
+        changed by the optimiser (preassigned castellers).
+    """
     # Get TUI logger
     tui_log = _get_tui_logger("Assigning peripheral positions")
     
+    if locked_positions is None:
+        locked_positions = {}
+
     # Merge all specs with type prefix
     all_specs = {}
     for qid, spec in mans_specs.items():
@@ -1303,10 +1345,23 @@ def global_peripheral_optimization(
     for qid, spec in laterals_specs.items():
         all_specs[f'laterals:{qid}'] = (spec, laterals_depth, 'laterals')
     
-    candidate_names = list(available_castellers['Nom complet'])
+    # Remove locked names from candidate pool (they are placed via
+    # locked_positions, not drawn from the pool).
+    locked_names: set = set()
+    for key_locks in locked_positions.values():
+        for dt in key_locks.values():
+            if dt and dt[0]:
+                locked_names.add(dt[0])
+
+    candidate_names = [
+        n for n in available_castellers['Nom complet']
+        if n not in locked_names
+    ]
     
-    # Generate initial solution
-    current_solution = _generate_random_global_assignment(all_specs, candidate_names)
+    # Generate initial solution (respects locked positions)
+    current_solution = _generate_random_global_assignment(
+        all_specs, candidate_names, locked_positions
+    )
     current_score = _score_global_assignment(
         current_solution, all_specs, all_assignments, 
         column_tronc_heights, all_castellers, use_weight
@@ -1318,12 +1373,14 @@ def global_peripheral_optimization(
     # Adaptive temperature
     sample_scores = []
     for _ in range(20):
-        sample = _generate_random_global_assignment(all_specs, candidate_names)
+        sample = _generate_random_global_assignment(
+            all_specs, candidate_names, locked_positions
+        )
         sample_scores.append(_score_global_assignment(
             sample, all_specs, all_assignments, column_tronc_heights, 
             all_castellers, use_weight
         ))
-    temperature = np.std(sample_scores) * 2 if len(sample_scores) > 1 else 100.0
+    temperature = max(np.std(sample_scores) * 2, 1e-6) if len(sample_scores) > 1 else 100.0
     
     if tui_log:
         tui_log.info(f"Starting global peripheral optimization (initial score: {current_score:.2f})")
@@ -1334,58 +1391,68 @@ def global_peripheral_optimization(
     no_improvement = 0
     acceptance_count = 0
     
-    while iteration < max_iterations and temperature > 0.01:
-        iteration += 1
-        
-        # Generate neighbor
-        neighbor = _generate_neighbor_global_assignment(
-            current_solution, all_specs, candidate_names
-        )
-        neighbor_score = _score_global_assignment(
-            neighbor, all_specs, all_assignments, 
-            column_tronc_heights, all_castellers, use_weight
-        )
-        
-        delta = neighbor_score - current_score
-        
-        if delta < 0 or random.random() < math.exp(-delta / temperature):
-            current_solution = neighbor
-            current_score = neighbor_score
-            acceptance_count += 1
+    interrupted = False
+    try:
+        while iteration < max_iterations and temperature > 0.01:
+            iteration += 1
             
-            if current_score < best_score:
-                best_solution = current_solution.copy()
-                best_score = current_score
-                no_improvement = 0
+            # Generate neighbor (locked positions are frozen)
+            neighbor = _generate_neighbor_global_assignment(
+                current_solution, all_specs, candidate_names, locked_positions
+            )
+            neighbor_score = _score_global_assignment(
+                neighbor, all_specs, all_assignments, 
+                column_tronc_heights, all_castellers, use_weight
+            )
+            
+            delta = neighbor_score - current_score
+            
+            if delta < 0 or (temperature > 0 and random.random() < math.exp(-delta / temperature)):
+                current_solution = neighbor
+                current_score = neighbor_score
+                acceptance_count += 1
+                
+                if current_score < best_score:
+                    best_solution = current_solution.copy()
+                    best_score = current_score
+                    no_improvement = 0
+                else:
+                    no_improvement += 1
             else:
                 no_improvement += 1
-        else:
-            no_improvement += 1
-        
-        # Adaptive cooling
-        if iteration % 100 == 0:
-            acceptance_rate = acceptance_count / 100
-            if acceptance_rate > 0.4:
-                temperature *= 0.85
-            elif acceptance_rate < 0.2:
-                temperature *= 0.98
-            else:
-                temperature *= 0.9
-            acceptance_count = 0
             
-            if iteration % 1000 == 0:
-                if tui_log:
-                    tui_log.info(f"Iteration {iteration}, best={best_score:.2f}")
+            # Adaptive cooling
+            if iteration % 100 == 0:
+                acceptance_rate = acceptance_count / 100
+                if acceptance_rate > 0.4:
+                    temperature *= 0.85
+                elif acceptance_rate < 0.2:
+                    temperature *= 0.98
                 else:
-                    logger.info("Iteration %d, best=%.2f", iteration, best_score)
-        
-        if no_improvement > 1500:
-            break
+                    temperature *= 0.9
+                acceptance_count = 0
+                
+                if iteration % 1000 == 0:
+                    if tui_log:
+                        tui_log.info(f"Iteration {iteration}, best={best_score:.2f}")
+                    else:
+                        logger.info("Iteration %d, best=%.2f", iteration, best_score)
+            
+            if no_improvement > 1500:
+                break
+    except KeyboardInterrupt:
+        interrupted = True
+        _msg = f"Interrupted — returning best solution after {iteration} iterations (score: {best_score:.2f})"
+        if tui_log:
+            tui_log.info(_msg)
+        else:
+            logger.info(_msg)
     
-    if tui_log:
-        tui_log.info(f"Completed in {iteration} iterations (score: {best_score:.2f})")
-    else:
-        logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
+    if not interrupted:
+        if tui_log:
+            tui_log.info(f"Completed in {iteration} iterations (score: {best_score:.2f})")
+        else:
+            logger.info("Completed in %d iterations (score: %.2f)", iteration, best_score)
     
     # Unpack solution by type
     result = {'mans': {}, 'daus': {}, 'laterals': {}}
@@ -1399,9 +1466,17 @@ def global_peripheral_optimization(
 
 def _generate_random_global_assignment(
     all_specs: Dict[str, Tuple[QueueSpec, int, str]],
-    candidate_names: List[str]
+    candidate_names: List[str],
+    locked_positions: Optional[Dict[str, Dict[int, Tuple[str, ...]]]] = None,
 ) -> Dict[str, List[Tuple[str, ...]]]:
-    """Generate random assignment across all queue types."""
+    """Generate random assignment across all queue types.
+
+    Locked positions (preassigned depths) are placed first; the remaining
+    slots are filled randomly from *candidate_names*.
+    """
+    if locked_positions is None:
+        locked_positions = {}
+
     assignment = {}
     available = candidate_names.copy()
     random.shuffle(available)
@@ -1410,7 +1485,10 @@ def _generate_random_global_assignment(
     for key, (spec, max_depth, qtype) in all_specs.items():
         assignment[key] = []
         for depth in range(max_depth):
-            if idx < len(available):
+            # Use locked value if this depth is preassigned
+            if key in locked_positions and depth in locked_positions[key]:
+                assignment[key].append(locked_positions[key][depth])
+            elif idx < len(available):
                 assignment[key].append((available[idx],))
                 idx += 1
             else:
@@ -1422,18 +1500,36 @@ def _generate_random_global_assignment(
 def _generate_neighbor_global_assignment(
     current: Dict[str, List[Tuple[str, ...]]],
     all_specs: Dict[str, Tuple[QueueSpec, int, str]],
-    all_candidates: List[str]
+    all_candidates: List[str],
+    locked_positions: Optional[Dict[str, Dict[int, Tuple[str, ...]]]] = None,
 ) -> Dict[str, List[Tuple[str, ...]]]:
-    """Generate neighbor by swapping or replacing across queues/types."""
+    """Generate neighbor by swapping or replacing across queues/types.
+
+    Locked positions (preassigned depths) are never moved.
+    """
     import random
+
+    if locked_positions is None:
+        locked_positions = {}
+
+    # Build set of (key, depth) pairs that are frozen
+    locked_set: set = set()
+    for key, depth_map in locked_positions.items():
+        for depth_idx in depth_map:
+            locked_set.add((key, depth_idx))
     
     neighbor = {k: [a for a in v] for k, v in current.items()}
     
-    # Get assigned and unassigned
+    # Get movable assigned positions (excluding locked)
     all_assigned = set()
     assigned_positions = []
     for key in all_specs.keys():
         for depth in range(len(neighbor[key])):
+            if (key, depth) in locked_set:
+                # Track as assigned but don't allow movement
+                if neighbor[key][depth] and neighbor[key][depth][0]:
+                    all_assigned.add(neighbor[key][depth][0])
+                continue
             if neighbor[key][depth] and neighbor[key][depth][0]:
                 assigned_positions.append((key, depth))
                 all_assigned.add(neighbor[key][depth][0])
@@ -1448,11 +1544,11 @@ def _generate_neighbor_global_assignment(
     move = random.choice(move_types)
     
     if move == 'swap':
-        # Swap between any two positions
+        # Swap between any two movable positions
         (key1, depth1), (key2, depth2) = random.sample(assigned_positions, 2)
         neighbor[key1][depth1], neighbor[key2][depth2] = neighbor[key2][depth2], neighbor[key1][depth1]
     else:
-        # Replace with unassigned
+        # Replace a movable position with an unassigned candidate
         key, depth = random.choice(assigned_positions)
         replacement = random.choice(unassigned)
         neighbor[key][depth] = (replacement,)
@@ -1468,64 +1564,96 @@ def _score_global_assignment(
     castellers: pd.DataFrame,
     use_weight: bool
 ) -> float:
-    """Score complete global assignment with strong monotonic penalties."""
+    """Score complete global assignment with balanced distribution.
+
+    Scoring components
+    ------------------
+    1. Per-slot candidate fit (height / expertise / weight).
+    2. **Depth-dependent empty-slot penalty** — shallower depths are more
+       expensive to leave empty (structural importance).
+    3. Strong monotonic height penalty (deeper ≥ shallower → penalised).
+    4. **Cross-type fill-rate balance** — penalises scenarios where one
+       queue type is fully staffed while another is starved.
+    5. Within-type balance (existing).
+    """
     total_score = 0.0
-    
+
+    # ── per-slot scoring ──────────────────────────────────────────────
     for key, depth_list in assignment.items():
         spec, max_depth, queue_type = all_specs[key]
         prev_height = None
-        
+
         for depth_idx, assignment_tuple in enumerate(depth_list, start=1):
             if not assignment_tuple or not assignment_tuple[0]:
-                total_score += 5.0
+                # Depth-dependent empty penalty: depth 1 → 20, depth 2 → 15,
+                # deeper → 10.  Shallower slots are structurally critical.
+                empty_penalty = max(10.0, 25.0 - 5.0 * depth_idx)
+                total_score += empty_penalty
                 continue
-            
+
             name = assignment_tuple[0]
             candidate = castellers[castellers['Nom complet'] == name]
             if candidate.empty:
                 total_score += 100.0
                 continue
-            
+
             candidate_row = candidate.iloc[0]
             current_height = candidate_row['Alçada (cm)']
-            
+
             # Calculate reference with in-progress context
             ref_height = _calculate_reference_for_global_assignment(
                 spec, depth_idx, key, assignment, all_assignments,
                 column_tronc_heights, castellers
             )
-            
+
             pos_spec = create_position_spec_from_queue(spec, depth_idx)
             score = _calculate_candidate_score(
                 candidate_row, ref_height, pos_spec, [], use_weight,
                 depth=depth_idx
             )
             total_score += score
-            
+
             # STRONG monotonic penalty
             if depth_idx > 1 and prev_height is not None:
                 if current_height >= prev_height:
                     violation = current_height - prev_height + 1
-                    total_score += violation * 20.0  # 10x stronger
-            
+                    total_score += violation * 20.0
+
             prev_height = current_height
-    
-    # Balance penalty across types
+
+    # ── balance penalties ─────────────────────────────────────────────
     type_depths = {'mans': [], 'daus': [], 'laterals': []}
+    type_max_depths = {'mans': [], 'daus': [], 'laterals': []}
     for key, depth_list in assignment.items():
-        _, _, queue_type = all_specs[key]
+        _, max_depth, queue_type = all_specs[key]
         filled = len([d for d in depth_list if d and d[0]])
         type_depths[queue_type].append(filled)
-    
-    # Within-type balance
+        type_max_depths[queue_type].append(max_depth)
+
+    # Within-type balance (unchanged)
     for qtype, depths in type_depths.items():
         if depths:
             variance = max(depths) - min(depths)
             if variance > 1:
-                total_score += (variance - 1) * 1e6  # Strong penalty for variance >1
+                total_score += (variance - 1) * 1e6
             else:
-                total_score += variance * 10.0  # Mild penalty within tolerance
-                
+                total_score += variance * 10.0
+
+    # Cross-type fill-rate balance: compare fill percentages across
+    # queue types so that laterals are not starved while mans is 100%.
+    fill_rates = {}
+    for qtype in ('mans', 'daus', 'laterals'):
+        total_filled = sum(type_depths.get(qtype, []))
+        total_slots = sum(type_max_depths.get(qtype, []))
+        if total_slots > 0:
+            fill_rates[qtype] = total_filled / total_slots
+    if len(fill_rates) >= 2:
+        rates = list(fill_rates.values())
+        fill_imbalance = max(rates) - min(rates)
+        # Penalise >20% fill-rate gap between types
+        if fill_imbalance > 0.2:
+            total_score += (fill_imbalance - 0.2) * 500.0
+
     return total_score
 
 

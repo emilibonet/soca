@@ -19,6 +19,7 @@ from .utils import (
 from .data import POSITION_SPECS
 from .display import summarize_assignments
 from .queue_assign import assign_rows_pipeline
+from .state import AssignmentState, DuplicateAssignmentError
 
 # Update build_castell_assignment() - replace column references
 
@@ -57,11 +58,12 @@ def build_castell_assignment(
         
         if position_name in POSITION_SPECS:
             spec = POSITION_SPECS[position_name]
+            columns_subset = {c: columns[c] for c in missing_columns}
             computed_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=spec,
                 previous_assignments=all_assignments,
-                columns=columns,
+                columns=columns_subset,
                 column_tronc_heights=None,
                 optimization_method=optimization_method,
                 use_weight=use_weight,
@@ -87,11 +89,12 @@ def build_castell_assignment(
         
         if missing_columns:
             crossa_spec = POSITION_SPECS['crossa']
+            columns_subset = {c: columns[c] for c in missing_columns}
             computed_crossa_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=crossa_spec,
                 previous_assignments=all_assignments,
-                columns=columns,
+                columns=columns_subset,
                 column_tronc_heights=None,
                 optimization_method=optimization_method,
                 use_weight=use_weight,
@@ -112,11 +115,12 @@ def build_castell_assignment(
         
         if missing_columns:
             contrafort_spec = POSITION_SPECS['contrafort']
+            columns_subset = {c: columns[c] for c in missing_columns}
             computed_contrafort_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=contrafort_spec,
                 previous_assignments=all_assignments,
-                columns=columns,
+                columns=columns_subset,
                 column_tronc_heights=None,
                 optimization_method=optimization_method,
                 use_weight=use_weight,
@@ -144,11 +148,12 @@ def build_castell_assignment(
         
         if missing_columns:
             agulla_spec = POSITION_SPECS['agulla']
+            columns_subset = {c: columns[c] for c in missing_columns}
             computed_agulla_assignment, stats = find_optimal_assignment(
                 castellers=castellers,
                 position_spec=agulla_spec,
                 previous_assignments=all_assignments,
-                columns=columns,
+                columns=columns_subset,
                 column_tronc_heights=column_tronc_heights,
                 optimization_method=optimization_method,
                 use_weight=use_weight,
@@ -191,9 +196,7 @@ def build_castell_assignment(
         peripheral_stats=peripheral_stats
     )
     
-    logger.info(f"\nTotal assigned: {summary.get('total_assigned', 0)}")
-    logger.info(f"Total unassigned: {summary.get('total_unassigned', 0)}")
-
+    print(summary)
     return all_assignments
 
 
@@ -289,183 +292,268 @@ def resolve_name_to_id(
         )
 
     # No matches: offer helpful hint about available names
-    example_names = castellers[name_col].astype(str).head(10).tolist()
-    raise ValueError(
-        f"Preassigned name not found: '{name}'. "
-        "Ensure exact spelling or provide an 'id' column in the layout."
-    )
+    raise ValueError(f"Name not found as available casteller.")
 
 
 def apply_preassigned_to_all_assignments(
     preassigned: Dict[str, Dict[str, Tuple[str, ...]]],
     castellers: pd.DataFrame,
-    all_assignments: Dict[str, Dict[str, Tuple[Any, ...]]],
+    all_assignments,
     name_col: str = 'Nom complet',
     id_col: Optional[str] = None,
     assigned_flag_col: str = 'assignat',
     availability_flag_col: str = 'Assaig',
-    logger_override=None
+    logger_override=None,
+    state: Optional[AssignmentState] = None,
+    on_conflict: str = 'raise',
+    swapped_names: Optional[set] = None,
+    failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
 ) -> None:
-    """Apply preassigned layout (by names) to `all_assignments` in-place.
+    """Apply preassigned layout (by names) to assignments.
 
-    Behavior:
-    - Resolves each name using `resolve_name_to_id`.
-    - If `id_col` is provided and exists, the resolved id will be the id_col value;
-      otherwise the DataFrame index value is used.
-    - Marks resolved castellers as assigned using `assigned_flag_col` on the DataFrame.
-    - Populates `all_assignments[pos][column] = tuple(resolved_ids)`.
-    - VALIDATES EXPERTISE: Warns if preassigned castellers lack required expertise.
+    Accepts either a plain dict ``all_assignments`` (legacy) or an
+    ``AssignmentState`` instance via *state*.  When *state* is provided,
+    duplicate detection is automatic and fail-fast.
 
-    Raises:
-    - ValueError for ambiguous or missing names with actionable messages.
+    Parameters
+    ----------
+    on_conflict : str
+        ``'raise'`` (default) — raise ``DuplicateAssignmentError`` on
+        duplicate name.  ``'warn'`` — log a warning and skip the
+        conflicting name (used for peripheral phase 2 where tronc
+        assignments take priority).
+
+    Resilience rules (per user requirements):
+    - **Duplicates across positions**: raise ``DuplicateAssignmentError``
+      (fail fast) — unless *on_conflict='warn'* (peripheral phase).
+    - **Name not found in castellers**: warn, skip that name and leave
+      the slot empty so the optimiser can fill it later.
+    - **Casteller not available** (availability flag False): warn, skip.
+
+    Populates ``state`` (or ``all_assignments``) with resolved **names**
+    (not IDs).
     """
     from .data import POSITION_SPECS
     _log = logger_override if logger_override is not None else logger
-    
-    # Prepare assigned flag
+
+    # Normalise inputs --------------------------------------------------
+    if state is None:
+        # Legacy path: wrap dict in an AssignmentState for uniform handling
+        state = AssignmentState.from_dict(all_assignments)
+        _legacy_dict = all_assignments  # keep ref so we can sync back
+    else:
+        _legacy_dict = None
+
     if assigned_flag_col not in castellers.columns:
         castellers[assigned_flag_col] = False
 
-    # If id_col not specified but 'id' exists, prefer it for clarity
     if id_col is None and 'id' in castellers.columns:
         id_col = 'id'
 
-    # Ensure all_assignments has containers
-    for pos in preassigned.keys():
-        all_assignments.setdefault(pos, {})
-
+    # ----------------------------------------------------------------
+    # Resolve names → canonical names
+    # ----------------------------------------------------------------
     for pos, cols in preassigned.items():
-        # Get position spec for expertise validation
+        state.ensure_position(pos)
         position_spec = POSITION_SPECS.get(pos)
-        
+
         for colname, names_tuple in cols.items():
             if not names_tuple:
-                # empty tuple -> leave as empty assignment
-                all_assignments[pos][colname] = ()
                 continue
 
-            resolved_ids: List[Any] = []
-            for name in names_tuple:
-                # Check availability first
+            resolved_names: List[Optional[str]] = []
+            for slot_idx, name in enumerate(names_tuple):
+                # --- placeholder slot (None / "") → preserve position ---
+                if name is None or (isinstance(name, str) and not name.strip()):
+                    resolved_names.append(None)
+                    continue
+
+                # --- availability check --------------------------------
                 if availability_flag_col in castellers.columns:
                     name_matches = castellers[castellers[name_col] == str(name)]
                     if not name_matches.empty:
                         is_unavailable = name_matches[availability_flag_col].iloc[0]
                         if pd.notna(is_unavailable) and not bool(is_unavailable):
                             _log.warning(
-                                f"PREASSIGNED '{name}' for {pos}[{colname}] is NOT AVAILABLE "
-                                f"({availability_flag_col}=False). Removing preassignment."
+                                "PREASSIGNED '%s' for %s[%s] is NOT AVAILABLE "
+                                "(%s=False). Removing preassignment.",
+                                name, pos, colname, availability_flag_col,
                             )
+                            if failed_preassignments is not None:
+                                failed_preassignments.setdefault(pos, {}).setdefault(colname, {})[slot_idx] = str(name)
+                            resolved_names.append(None)
                             continue
-                
-                # If the caller accidentally provided numeric ids as strings, try to detect
-                # and accept them directly if they match a DataFrame id or index.
-                if isinstance(name, (int, float)) and not pd.isna(name):
-                    # numeric id provided
-                    if id_col is not None and id_col in castellers.columns and int(name) in set(castellers[id_col].astype(int)):
-                        resolved_ids.append(int(name))
-                        continue
-                    elif int(name) in set(castellers.index.astype(int)):
-                        resolved_ids.append(int(name))
-                        continue
-                    # otherwise fallthrough to name resolution
 
-                # Resolve by name (robust)
+                # --- resolve name --------------------------------------
                 try:
-                    resolved = resolve_name_to_id(castellers, str(name), name_col=name_col, id_col=id_col)
-                    resolved_ids.append(resolved)
+                    resolved = resolve_name_to_id(
+                        castellers, str(name), name_col=name_col, id_col=id_col
+                    )
                 except ValueError as e:
-                    _log.warning(f"Skipping preassignment '{name}' for {pos}[{colname}]: {e}")
+                    # Resilience: name not in DB → skip, allow optimiser fill
+                    _log.warning(
+                        "Skipping preassignment '%s' for %s[%s]: %s",
+                        name, pos, colname, e,
+                    )
+                    if failed_preassignments is not None:
+                        failed_preassignments.setdefault(pos, {}).setdefault(colname, {})[slot_idx] = str(name)
+                    resolved_names.append(None)
                     continue
 
-            # Map resolved ids/indices back to the canonical name (name_col) for storage
-            resolved_names: List[str] = []
-            for rid in resolved_ids:
-                name_to_store = None
-                # If resolver returned a string, assume it's already a name
-                if isinstance(rid, str):
-                    name_to_store = rid
-                else:
-                    # Try id_col lookup first (preferred)
-                    if id_col is not None and id_col in castellers.columns:
-                        matches = castellers[castellers[id_col] == rid]
-                        if not matches.empty:
-                            name_to_store = matches[name_col].iloc[0]
-                    # Fallback: treat rid as DataFrame index
-                    if name_to_store is None:
-                        try:
-                            matches = castellers.loc[[rid]]
-                            if not matches.empty:
-                                name_to_store = matches[name_col].iloc[0]
-                        except Exception:
-                            name_to_store = None
+                # --- map back to canonical name -----------------------
+                canonical = _resolve_to_canonical_name(
+                    resolved, castellers, name_col, id_col
+                )
 
-                # As a last resort, stringize the resolved value
-                if name_to_store is None:
-                    name_to_store = str(rid)
-
-                resolved_names.append(name_to_store)
-                
-                # EXPERTISE VALIDATION: Check if preassigned casteller has required expertise
+                # --- expertise validation (warning only) ---------------
                 if position_spec is not None:
-                    casteller_row = castellers[castellers[name_col] == name_to_store]
-                    if not casteller_row.empty:
-                        pos1 = str(casteller_row['Posició 1'].iloc[0]).lower()
-                        pos2 = str(casteller_row['Posició 2'].iloc[0]).lower()
-                        has_expertise = any(kw.lower() in pos1 or kw.lower() in pos2 
-                                           for kw in position_spec.expertise_keywords)
-                        
-                        if not has_expertise:
-                            _log.warning(
-                                "PREASSIGNED %s '%s' in column %s lacks required expertise (keywords: %s)",
-                                pos.upper(), name_to_store, colname, position_spec.expertise_keywords
-                            )
-                            _log.warning(
-                                "    Current positions: Posició 1='%s', Posició 2='%s'",
-                                casteller_row['Posició 1'].iloc[0] if 'Posició 1' in casteller_row.columns else 'N/A',
-                                casteller_row['Posició 2'].iloc[0] if 'Posició 2' in casteller_row.columns else 'N/A'
-                            )
+                    _warn_if_lacking_expertise(
+                        canonical, pos, colname, position_spec, castellers,
+                        name_col, _log,
+                    )
 
-            # Store canonical names in all_assignments so downstream filters can
-            # always compare against the `Nom complet` column.
-            # For peripheral queues (mans/daus/laterals) the rest of the
-            # pipeline expects a list of depth-tuples (e.g. [(name,), (name,), ...]).
-            # If a flat sequence of names was supplied in the YAML, convert it
-            # here to the depth-list structure. Otherwise store a tuple for
-            # tronc-style positions.
-            if pos in ("mans", "daus", "laterals"):
-                # If the caller gave a single tuple/list of names for this
-                # queue column, convert to depth list. If they already
-                # provided a depth-list (list of tuples), accept it.
-                if isinstance(resolved_names, list) and resolved_names and isinstance(resolved_names[0], (list, tuple)):
-                    # Already depth-list-ish: normalize inner sequences to tuples
-                    depth_list = [tuple(item) for item in resolved_names]
-                    all_assignments[pos][colname] = depth_list
+                resolved_names.append(canonical)
+
+            if not any(n is not None for n in resolved_names):
+                continue
+
+            # --- conflict pre-filter (warn mode) -----------------------
+            if on_conflict == 'warn':
+                filtered = []
+                for rn_idx, rn in enumerate(resolved_names):
+                    if rn is None:
+                        filtered.append(None)
+                    elif state.is_assigned(rn):
+                        previous = state.find_assignment(rn)
+                        _log.warning(
+                            "Skipping preassignment '%s' for %s[%s]: "
+                            "already assigned to %s (tronc takes priority).",
+                            rn, pos, colname, previous,
+                        )
+                        if swapped_names is not None:
+                            swapped_names.add(rn)
+                        if failed_preassignments is not None:
+                            failed_preassignments.setdefault(pos, {}).setdefault(colname, {})[rn_idx] = rn
+                        filtered.append(None)
+                    else:
+                        filtered.append(rn)
+                resolved_names = filtered
+                if not any(n is not None for n in resolved_names):
+                    continue
+
+            # --- store in AssignmentState (fail-fast on duplicates) -----
+            try:
+                if pos in ('mans', 'daus', 'laterals'):
+                    # Sort real names by height descending (tallest →
+                    # depth 1); None placeholders stay in position.
+                    real_names = [n for n in resolved_names if n is not None]
+                    sorted_real = _sort_names_by_height(
+                        real_names, castellers, name_col
+                    )
+                    # Rebuild list preserving None positions
+                    it = iter(sorted_real)
+                    final = [next(it) if n is not None else None
+                             for n in resolved_names]
+                    depth_list = [
+                        (n,) if n else (None,) for n in final
+                    ]
+                    state.assign_queue(pos, colname, depth_list)
                 else:
-                    depth_list = []
-                    for name_item in resolved_names:
-                        if name_item:
-                            depth_list.append((name_item,))
-                        else:
-                            depth_list.append((None,))
-                    all_assignments[pos][colname] = depth_list
-            else:
-                all_assignments[pos][colname] = tuple(resolved_names)
+                    state.assign_tronc(pos, colname, tuple(resolved_names))
+            except DuplicateAssignmentError as e:
+                if on_conflict == 'warn':
+                    _log.warning("Conflict during peripheral store: %s", e)
+                else:
+                    raise DuplicateAssignmentError(
+                        f"Preassignment conflict: {e}"
+                    ) from None
 
-            # Mark assigned in the castellers DataFrame. Prefer marking by id
-            # where available, but also mark by name for any string-resolved values.
-            if id_col is not None and id_col in castellers.columns:
-                id_values = [r for r in resolved_ids if not isinstance(r, str)]
-                if id_values:
-                    castellers.loc[castellers[id_col].isin(id_values), assigned_flag_col] = True
-                name_values = [r for r in resolved_ids if isinstance(r, str)]
-                if name_values:
-                    castellers.loc[castellers[name_col].isin(name_values), assigned_flag_col] = True
-            else:
-                # No id_col: resolved_ids should be DataFrame indices or names
-                idx_values = [r for r in resolved_ids if not isinstance(r, str)]
-                if idx_values:
-                    castellers.loc[castellers.index.isin(idx_values), assigned_flag_col] = True
-                name_values = [r for r in resolved_ids if isinstance(r, str)]
-                if name_values:
-                    castellers.loc[castellers[name_col].isin(name_values), assigned_flag_col] = True
+            # --- mark in DataFrame ------------------------------------
+            real_assigned = [n for n in resolved_names if n is not None]
+            if real_assigned:
+                castellers.loc[
+                    castellers[name_col].isin(real_assigned),
+                    assigned_flag_col,
+                ] = True
+
+    # Sync back to legacy dict if caller used the old API
+    if _legacy_dict is not None:
+        _legacy_dict.clear()
+        _legacy_dict.update(state.to_dict())
+
+
+# ── helpers for apply_preassigned ─────────────────────────────────────
+
+def _resolve_to_canonical_name(
+    resolved, castellers: pd.DataFrame, name_col: str, id_col: Optional[str]
+) -> str:
+    """Convert a resolved id/index/string back to the canonical name."""
+    if isinstance(resolved, str):
+        return resolved
+
+    # Try id_col lookup
+    if id_col is not None and id_col in castellers.columns:
+        matches = castellers[castellers[id_col] == resolved]
+        if not matches.empty:
+            return matches[name_col].iloc[0]
+
+    # Fallback: DataFrame index
+    try:
+        matches = castellers.loc[[resolved]]
+        if not matches.empty:
+            return matches[name_col].iloc[0]
+    except Exception:
+        pass
+
+    return str(resolved)
+
+
+def _warn_if_lacking_expertise(
+    name: str,
+    pos: str,
+    colname: str,
+    spec,
+    castellers: pd.DataFrame,
+    name_col: str,
+    _log,
+) -> None:
+    """Emit a warning if the casteller lacks required expertise for *pos*."""
+    row = castellers[castellers[name_col] == name]
+    if row.empty:
+        return
+    pos1 = str(row['Posició 1'].iloc[0]).lower() if 'Posició 1' in row.columns else ''
+    pos2 = str(row['Posició 2'].iloc[0]).lower() if 'Posició 2' in row.columns else ''
+    has_exp = any(
+        kw.lower() in pos1 or kw.lower() in pos2
+        for kw in spec.expertise_keywords
+    )
+    if not has_exp:
+        _log.warning(
+            "PREASSIGNED %s '%s' in column %s lacks required expertise "
+            "(keywords: %s)  |  Posició 1='%s', Posició 2='%s'",
+            pos.upper(), name, colname, spec.expertise_keywords,
+            row['Posició 1'].iloc[0] if 'Posició 1' in row.columns else 'N/A',
+            row['Posició 2'].iloc[0] if 'Posició 2' in row.columns else 'N/A',
+        )
+
+
+def _sort_names_by_height(
+    names: List[str],
+    castellers: pd.DataFrame,
+    name_col: str = 'Nom complet',
+) -> List[str]:
+    """Sort names by height descending (tallest first for queue depth 1).
+
+    Names without a height record in the DataFrame are placed at the end.
+    """
+    def _height(name: str) -> float:
+        row = castellers[castellers[name_col] == name]
+        if row.empty or 'Alçada (cm)' not in row.columns:
+            return 0.0
+        val = row['Alçada (cm)'].iloc[0]
+        try:
+            return float(val) if pd.notna(val) else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    return sorted(names, key=_height, reverse=True)

@@ -19,6 +19,7 @@ from soca.optimize import find_optimal_assignment
 from soca.utils import build_columns, compute_column_tronc_heights, filter_available_castellers
 from soca.queue_assign import assign_rows_pipeline
 from soca.display import SectionManager, SectionLogger, create_final_panel, summarize_assignments
+from soca.state import AssignmentState, DuplicateAssignmentError
 
 # Configuration file paths
 CONFIG_YAML = 'config.yaml'
@@ -145,14 +146,20 @@ def parse_preassignments(preassigned_config: Optional[Dict[str, Any]], logger=No
             # Handle nested lists (flatten for positions like crossa)
             if isinstance(names, list):
                 # Check if it's a list of lists/strings (nested structure)
+                # None (YAML null/~) and "" are preserved as None placeholders
+                # so slot ordering is maintained (optimizer fills empty slots).
                 flat_names = []
                 for item in names:
                     if isinstance(item, list):
-                        flat_names.extend([n for n in item if n])
+                        flat_names.extend([n if n else None for n in item])
                     elif isinstance(item, str) and item:
                         flat_names.append(item)
+                    else:
+                        # None, "", or other falsy → placeholder
+                        flat_names.append(None)
                 
-                if flat_names:
+                # Keep the list if it has at least one real name
+                if any(n is not None for n in flat_names):
                     preassignments[position_name][column_name] = flat_names
                     
             elif isinstance(names, str) and names:
@@ -170,13 +177,21 @@ def parse_preassignments(preassigned_config: Optional[Dict[str, Any]], logger=No
 def validate_preassignments(preassignments: Dict[str, Dict], logger=None) -> bool:
     """Validate preassignments for duplicates.
     
+    Fail-fast: raises DuplicateAssignmentError if any name appears more
+    than once across ALL positions (tronc + peripheral).
+    
     Returns
     -------
     bool
-        True if valid, False if duplicates found
+        True if valid
+    
+    Raises
+    ------
+    DuplicateAssignmentError
+        If any name is assigned to multiple positions
     """
     # Collect all assigned names with their locations
-    name_locations = {}
+    name_locations: Dict[str, List[str]] = {}
     
     for position_name, columns in preassignments.items():
         for column_name, names in columns.items():
@@ -196,25 +211,22 @@ def validate_preassignments(preassignments: Dict[str, Dict], logger=None) -> boo
     duplicates = {name: locs for name, locs in name_locations.items() if len(locs) > 1}
     
     if duplicates:
+        msgs = []
+        for name, locations in sorted(duplicates.items()):
+            msgs.append(f"'{name}' appears {len(locations)} times: {', '.join(locations)}")
+        error_msg = "Duplicate preassignments detected:\n" + "\n".join(msgs)
+        
         if logger:
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("ERROR: Duplicate preassignments detected")
-            logger.error("="*60)
+            logger.error("=" * 60)
             for name, locations in sorted(duplicates.items()):
                 logger.error(f"'{name}' appears {len(locations)} times:")
                 for loc in locations:
                     logger.error(f"  - {loc}")
                 logger.error("")
-        else:
-            print("="*60)
-            print("ERROR: Duplicate preassignments detected")
-            print("="*60)
-            for name, locations in sorted(duplicates.items()):
-                print(f"'{name}' appears {len(locations)} times:")
-                for loc in locations:
-                    print(f"  - {loc}")
-                print("")
-        return False
+        
+        raise DuplicateAssignmentError(error_msg)
     
     return True
 
@@ -397,7 +409,8 @@ def assign_single_position(
     column_tronc_heights,
     optimization_method: str,
     use_weight: bool,
-    logger: SectionLogger
+    logger: SectionLogger,
+    state: Optional[AssignmentState] = None,
 ) -> Dict[str, Any]:
     """Assign a single position with logging.
     
@@ -410,7 +423,7 @@ def assign_single_position(
     columns : dict
         Column definitions
     all_assignments : dict
-        Current assignments
+        Current assignments (updated in place)
     column_tronc_heights : dict or None
         Tronc heights (None for pinya-level)
     optimization_method : str
@@ -419,26 +432,48 @@ def assign_single_position(
         Whether to use weight in optimization
     logger : SectionLogger
         Logger for this section
+    state : AssignmentState, optional
+        If provided, state is used as the source of truth for tracking.
     
     Returns
     -------
     dict
         Assignment statistics
     """
-    # Check if position already fully assigned
-    already_assigned_columns = set(all_assignments.get(position_name, {}).keys())
-    missing_columns = [c for c in columns.keys() 
-                      if c not in already_assigned_columns 
-                      or not all_assignments.get(position_name, {}).get(c)]
+    from soca.data import POSITION_SPECS
     
-    if not missing_columns:
-        logger.info(f"✓ {position_name.upper()} already fully assigned")
-        return {}
-    
-    # Check if spec exists
     if position_name not in POSITION_SPECS:
         logger.error(f"Missing POSITION_SPECS entry for '{position_name}'")
         raise ValueError(f"Missing POSITION_SPECS entry for '{position_name}'")
+    
+    position_spec = POSITION_SPECS[position_name]
+    required_count = position_spec.count_per_column
+    
+    # Check which columns need assignment (missing or incomplete)
+    already_assigned_columns = set(all_assignments.get(position_name, {}).keys())
+    missing_columns = []
+    incomplete_columns = []
+    
+    for c in columns.keys():
+        if c not in already_assigned_columns:
+            missing_columns.append(c)
+        else:
+            assigned = all_assignments[position_name].get(c, ())
+            actual_count = len([name for name in assigned if name]) if assigned else 0
+            if actual_count == 0:
+                missing_columns.append(c)
+            elif actual_count < required_count:
+                incomplete_columns.append(c)
+                logger.info(f"Column {c} has incomplete assignment: {actual_count}/{required_count}")
+    
+    columns_to_optimize = missing_columns + incomplete_columns
+    
+    if not columns_to_optimize:
+        logger.info(f"✓ {position_name.upper()} already fully assigned")
+        return {}
+    
+    if incomplete_columns:
+        logger.info(f"Re-optimizing {len(incomplete_columns)} incomplete columns: {', '.join(incomplete_columns)}")
     
     logger.info(f"Starting {position_name.upper()} assignment...")
     
@@ -446,32 +481,63 @@ def assign_single_position(
     available = filter_available_castellers(castellers, all_assignments)
     logger.info(f"Available candidates: {len(available)}")
     
-    # Get position spec
     spec = POSITION_SPECS[position_name]
     logger.info(f"Optimization method: {optimization_method}")
-    
-    # Run optimization
     logger.info("Initializing optimization...")
+    
+    # Only pass columns that need optimization — preserve preassigned columns
+    columns_subset = {c: columns[c] for c in columns_to_optimize}
+    
     computed_assignment, stats = find_optimal_assignment(
         castellers=castellers,
         position_spec=spec,
         previous_assignments=all_assignments,
-        columns=columns,
+        columns=columns_subset,
         column_tronc_heights=column_tronc_heights,
         optimization_method=optimization_method,
         use_weight=use_weight,
         return_stats=True
     )
     
-    # Update assignments
+    # Update only the optimized columns — never overwrite preassigned ones
     all_assignments.setdefault(position_name, {})
     for col_name, value in computed_assignment.items():
-        if col_name not in all_assignments[position_name] or not all_assignments[position_name].get(col_name):
-            all_assignments[position_name][col_name] = value
+        if col_name not in columns_to_optimize:
+            continue
+
+        # For incomplete columns, merge optimizer output with existing
+        # preassignment: keep preassigned slots, fill empty slots with
+        # the optimizer's best picks (in order).  This mirrors the
+        # depth-level merge that queue_assign.py already does for
+        # peripheral positions.
+        if col_name in incomplete_columns:
+            existing = all_assignments[position_name].get(col_name, ())
+            if existing:
+                merged = list(existing)
+                opt_iter = iter(value)
+                for i in range(len(merged)):
+                    if not merged[i]:  # None or empty string → fill
+                        try:
+                            merged[i] = next(opt_iter)
+                        except StopIteration:
+                            break
+                value = tuple(merged)
+
+        all_assignments[position_name][col_name] = value
+        if state is not None:
+            try:
+                state.assign_tronc(position_name, col_name, value)
+            except DuplicateAssignmentError as e:
+                logger.error(
+                    f"DUPLICATE DETECTED after optimization for "
+                    f"{position_name}[{col_name}]: {e}"
+                )
+                raise
     
-    # Log results
-    total_assigned = sum(len([n for n in assigned if n]) 
-                        for assigned in computed_assignment.values())
+    total_assigned = sum(
+        len([n for n in assigned if n])
+        for assigned in computed_assignment.values()
+    )
     
     if stats and 'final_score' in stats:
         logger.info(f"✓ {position_name.upper()} assignment complete (score: {stats['final_score']:.1f})")
@@ -502,12 +568,23 @@ def main():
     except Exception:
         config = {}
     
-    accent_color = config.get('display', {}).get('accent_color', 'cyan')
+    display_cfg = config.get('display', {})
+    accent_color = display_cfg.get('accent_color', 'cyan')
+    animation_enabled = display_cfg.get('animation_enabled', True)
+    panel_title = display_cfg.get('panel_title', 'Castell Assignment Pipeline')
+    transient = display_cfg.get('transient', False)
+    refresh_per_second = display_cfg.get('refresh_per_second', 4)
     
     # ===================================================================
     # SETUP TUI MANAGER
     # ===================================================================
-    tui = SectionManager(accent_color=accent_color)
+    tui = SectionManager(
+        accent_color=accent_color,
+        animation_enabled=animation_enabled,
+        panel_title=panel_title,
+        transient=transient,
+        refresh_per_second=refresh_per_second,
+    )
     # Set TUI manager for all modules
     import soca.optimize
     import soca.queue_assign
@@ -575,23 +652,65 @@ def main():
                 castellers = add_castellers(castellers, untracked)
                 logger.info(f"Total castellers after adding untracked: {len(castellers)}")
             
-            # Initialize assignments and apply preassignments
-            all_assignments = {}
+            # Initialize AssignmentState as single source of truth
+            state = AssignmentState()
+            all_assignments = state.to_dict()  # shared ref — state owns the data
+            
+            # Split preassignments into tronc (phase 1) and peripheral (phase 2)
+            # so that tronc optimization has access to castellers preassigned
+            # to peripheral positions.
+            PERIPHERAL_TYPES = {'mans', 'daus', 'laterals'}
+            tronc_preassignments = {}
+            peripheral_preassignments = {}
             if preassignments:
-                # Validate for duplicates
-                if not validate_preassignments(preassignments, logger):
+                tronc_preassignments = {
+                    k: v for k, v in preassignments.items()
+                    if k not in PERIPHERAL_TYPES
+                }
+                peripheral_preassignments = {
+                    k: v for k, v in preassignments.items()
+                    if k in PERIPHERAL_TYPES
+                }
+
+            if preassignments:
+                # Validate for duplicates across ALL preassignments (fail-fast)
+                try:
+                    validate_preassignments(preassignments, logger)
+                except DuplicateAssignmentError:
                     tui.fail_section("Loading data")
-                    raise ValueError("Preassignment validation failed: duplicate assignments detected")
-                
-                logger.info("Applying preassignments...")
-                apply_preassigned_to_all_assignments(
-                    preassignments, 
-                    castellers, 
-                    all_assignments, 
-                    name_col='Nom complet',
-                    logger_override=logger
+                    raise
+
+            failed_preassignments: Dict[str, Dict[str, Dict[int, str]]] = {}
+
+            if tronc_preassignments:
+                logger.info("Applying tronc preassignments (phase 1)...")
+                try:
+                    apply_preassigned_to_all_assignments(
+                        tronc_preassignments,
+                        castellers,
+                        all_assignments,
+                        name_col='Nom complet',
+                        logger_override=logger,
+                        state=state,
+                        failed_preassignments=failed_preassignments,
+                    )
+                except DuplicateAssignmentError as e:
+                    tui.fail_section("Loading data")
+                    raise
+                logger.info(
+                    f"✓ Tronc preassignments applied "
+                    f"({len(state.get_all_assigned_names())} castellers assigned)"
                 )
-                logger.info("✓ Preassignments applied")
+
+            # Snapshot resolved preassigned names (tronc phase)
+            preassigned_resolved_names: set = set(state.get_all_assigned_names())
+            preassigned_swapped_names: set = set()
+            
+            if peripheral_preassignments:
+                logger.info(
+                    f"Peripheral preassignments deferred to phase 2 "
+                    f"({sum(len(v) for v in peripheral_preassignments.values())} queues)"
+                )
             
             # Parse castell configuration
             castell_config = parse_castell_config(config)
@@ -627,10 +746,11 @@ def main():
                     castellers=castellers,
                     columns=columns,
                     all_assignments=all_assignments,
-                    column_tronc_heights=None,  # Pinya level
+                    column_tronc_heights=None,
                     optimization_method=optimization['method'],
                     use_weight=optimization['use_weight'],
-                    logger=logger
+                    logger=logger,
+                    state=state,
                 )
             except Exception as e:
                 tui.fail_section("Assigning BAIX")
@@ -648,10 +768,11 @@ def main():
                         castellers=castellers,
                         columns=columns,
                         all_assignments=all_assignments,
-                        column_tronc_heights=None,  # Pinya level
+                        column_tronc_heights=None,
                         optimization_method=optimization['method'],
                         use_weight=optimization['use_weight'],
-                        logger=logger
+                        logger=logger,
+                        state=state,
                     )
                 except Exception as e:
                     tui.fail_section("Assigning BAIX")
@@ -669,10 +790,11 @@ def main():
                         castellers=castellers,
                         columns=columns,
                         all_assignments=all_assignments,
-                        column_tronc_heights=None,  # Pinya level
+                        column_tronc_heights=None,
                         optimization_method=optimization['method'],
                         use_weight=optimization['use_weight'],
-                        logger=logger
+                        logger=logger,
+                        state=state,
                     )
                 except Exception as e:
                     tui.fail_section("Assigning CONTRAFORT")
@@ -702,7 +824,8 @@ def main():
                         column_tronc_heights=column_tronc_heights,
                         optimization_method=optimization['method'],
                         use_weight=optimization['use_weight'],
-                        logger=logger
+                        logger=logger,
+                        state=state,
                     )
                 except Exception as e:
                     tui.fail_section("Assigning AGULLA")
@@ -713,6 +836,25 @@ def main():
         # ================================================================
         with tui.section("Assigning peripheral positions"):
             logger = SectionLogger(tui, "Assigning peripheral positions")
+
+            # PHASE 2: APPLY PERIPHERAL PREASSIGNMENTS (after tronc is done)
+            if peripheral_preassignments:
+                names_before_peripheral = state.get_all_assigned_names()
+                preassigned_swapped_names: set = set()
+                apply_preassigned_to_all_assignments(
+                    peripheral_preassignments,
+                    castellers,
+                    all_assignments,
+                    name_col='Nom complet',
+                    state=state,
+                    on_conflict='warn',  # tronc assignments take priority
+                    logger_override=logger,
+                    swapped_names=preassigned_swapped_names,
+                    failed_preassignments=failed_preassignments,
+                )
+                # Only add names actually placed by peripheral preassignment
+                peripheral_placed = state.get_all_assigned_names() - names_before_peripheral
+                preassigned_resolved_names.update(peripheral_placed)
             
             logger.info("Starting peripheral assignment (mans, daus, laterals)...")
             logger.info("Building queue specifications...")
@@ -733,6 +875,9 @@ def main():
             for queue_type in ['mans', 'daus', 'laterals']:
                 if queue_type in result:
                     all_assignments[queue_type] = result[queue_type]
+            
+            # Rebuild state tracking after peripheral merge
+            state._rebuild_names()
             
             # Log summary per queue type
             for queue_type in ['mans', 'daus', 'laterals']:
@@ -773,6 +918,8 @@ def main():
         with open(output_file, "w", encoding='utf-8') as f:
             dump(output_data, f, indent=2, ensure_ascii=False)
         
+        tui.stop()
+
         console = Console(file=sys.stdout, force_terminal=True)
         
         # Print detailed assignment summary
@@ -786,14 +933,27 @@ def main():
             columns=columns,
             column_tronc_heights=column_tronc_heights,
             assignment_stats={},
-            peripheral_stats=stats
+            peripheral_stats=stats,
+            preassigned_names=preassigned_resolved_names,
+            preassigned_swapped_names=preassigned_swapped_names,
+            failed_preassignments=failed_preassignments,
         )
+        console.print(summary)  # ← ADD THIS LINE
         console.print()
         console.print(create_final_panel(all_assignments, castellers, output_file))
         console.print()
     
+    except KeyboardInterrupt:
+        # Graceful shutdown on Ctrl+C
+        if tui.live and tui.live.is_started:
+            tui.stop()
+        console = Console(file=sys.stderr, force_terminal=True)
+        console.print("\n[bold yellow]Interrupted by user — exiting.[/bold yellow]")
+        sys.exit(130)
+    
     finally:        
-        tui.stop()
+        if tui.live and tui.live.is_started:
+            tui.stop()
 
 
 if __name__ == "__main__":
