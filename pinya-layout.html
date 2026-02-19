@@ -1,0 +1,3572 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3d6 Castell Pinya Assignment</title>
+    <style>
+        :root {
+            --accent: #d9944a;
+            --accent-hover: #e5a864;
+            --bg-dark: #1a1a1a;
+            --bg-card: #2a2a2a;
+            --bg-card-hover: #333333;
+            --text: #e0e0e0;
+            --text-dim: #999999;
+            --border: #444444;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --error: #f44336;
+            --rengla: #4a7c9d;
+            --plena: #d9944a;
+            --buida: #6b9d6b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            grid-template-rows: 60px 1fr 40px;
+            height: 100vh;
+            gap: 0;
+        }
+
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-card);
+            border-bottom: 2px solid var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn.secondary {
+            background: var(--bg-card-hover);
+            color: var(--text);
+        }
+
+        .btn.secondary:hover {
+            background: #404040;
+        }
+
+        /* Settings Panel */
+        .settings-panel {
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .settings-panel h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: var(--accent);
+        }
+
+        .settings-section {
+            margin-bottom: 20px;
+        }
+
+        .settings-section h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: var(--text);
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .settings-section h3::before {
+            content: '▶';
+            font-size: 10px;
+            transition: transform 0.2s;
+        }
+
+        .settings-section.expanded h3::before {
+            transform: rotate(90deg);
+        }
+
+        .settings-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .settings-section.expanded .settings-content {
+            max-height: 1000px;
+        }
+
+        .setting-row {
+            margin-bottom: 10px;
+        }
+
+        .setting-row label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .setting-row input[type="range"] {
+            width: 100%;
+        }
+
+        .setting-row input[type="number"] {
+            width: 100%;
+            padding: 6px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .setting-row select {
+            width: 100%;
+            padding: 6px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+        }
+
+        /* Canvas */
+        .canvas {
+            position: relative;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #252525 0%, #1a1a1a 100%);
+        }
+
+        .canvas-inner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            transform-origin: center;
+            transition: transform 0.3s ease;
+            width: 100%;
+            height: 100%;
+            max-width: 1400px;
+            max-height: 1000px;
+        }
+
+        /* Pinya Slots */
+        .slot {
+            position: absolute;
+            background: var(--bg-card);
+            border: 2px dashed var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 50px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 11px;
+            text-align: center;
+            z-index: 10;
+        }
+        
+        .slot.tronc {
+            z-index: 5;
+        }
+        
+        .slot.filled {
+            z-index: 15;
+        }
+
+        .slot.filled {
+            border: 2px solid var(--accent);
+            background: var(--bg-card-hover);
+        }
+
+        .slot.tronc {
+            border-color: #555;
+            background: #1f1f1f;
+            cursor: default;
+            opacity: 0.5;
+            font-size: 10px;
+        }
+        
+        .slot:not(.tronc):not(.queue-slot):hover {
+            transform: scale(1.03);
+            border-color: var(--accent);
+            box-shadow: 0 0 8px rgba(217, 148, 74, 0.3);
+        }
+        
+        .slot.queue-slot:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 6px rgba(217, 148, 74, 0.3);
+        }
+
+        .slot.dragging-over {
+            border-color: var(--accent);
+            background: rgba(217, 148, 74, 0.1);
+            transform: scale(1.05);
+        }
+
+        .slot.drag-invalid {
+            border-color: var(--error);
+            cursor: not-allowed;
+        }
+
+        .slot-label {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .slot-name {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 2px;
+        }
+
+        .slot-height {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        .slot-indicators {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .indicator.height-good { background: var(--success); }
+        .indicator.height-ok { background: var(--warning); }
+        .indicator.height-bad { background: var(--error); }
+
+        .indicator.expertise-primary { color: gold; }
+        .indicator.expertise-secondary { color: silver; }
+        .indicator.expertise-none { color: #666; }
+
+        /* Column Colors */
+        .slot.col-rengla { border-color: var(--rengla); }
+        .slot.col-plena { border-color: var(--plena); }
+        .slot.col-buida { border-color: var(--buida); }
+
+        /* Pool Panel */
+        .pool-panel {
+            background: var(--bg-card);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pool-header {
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .pool-header h2 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .pool-count {
+            font-size: 12px;
+            color: var(--text-dim);
+            background: var(--bg-dark);
+            padding: 4px 8px;
+            border-radius: 12px;
+        }
+
+        .pool-search {
+            width: 100%;
+            padding: 8px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .pool-controls {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .pool-controls select {
+            flex: 1;
+            padding: 6px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .pool-list {
+            overflow-y: auto;
+            padding: 10px;
+            flex: 1;
+        }
+
+        .casteller-card {
+            background: var(--bg-card-hover);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: grab;
+            transition: all 0.2s;
+        }
+
+        .casteller-card:hover {
+            border-color: var(--accent);
+            transform: translateX(4px);
+        }
+
+        .casteller-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .casteller-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .casteller-info {
+            font-size: 11px;
+            color: var(--text-dim);
+            display: flex;
+            gap: 8px;
+        }
+
+        .casteller-actions {
+            display: flex;
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            grid-column: 1 / -1;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-item.valid { color: var(--success); }
+        .status-item.warning { color: var(--warning); }
+        .status-item.invalid { color: var(--error); }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            font-size: 20px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 60px;
+            right: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 12px 16px;
+            z-index: 2000;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+            max-width: 400px;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 3000;
+            opacity: 0;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+
+        .tooltip.show {
+            opacity: 1;
+        }
+
+        /* Zoom controls */
+        .zoom-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+
+        .zoom-btn:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--accent);
+        }
+
+        /* Undo/Redo */
+        .history-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        /* ============================================================ */
+        /* POSITION LAYOUT — 3d6 Triangle Pinya (no rotations)         */
+        /* Triangle: Buida upper-left, Plena upper-right, Rengla bottom */
+        /* Each column stack: Terç → Segon → Agulla → [Cr] Baix [Cr] → Contrafort */
+        /* ============================================================ */
+
+        /* === RENGLA column (bottom center, x=50%) === */
+        .slot.terc-rengla   { left: 50%; top: 44.5%; transform: translateX(-50%); width: 80px; height: 35px; }
+        .slot.segon-rengla  { left: 50%; top: 49%;   transform: translateX(-50%); width: 80px; height: 35px; }
+        .slot.crossa-rengla-1 { left: 42.5%; top: 59%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* baix-rengla is now an SVG baix-wrapper (see below) */
+        .slot.crossa-rengla-2 { left: 57.5%; top: 59%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* contrafort-rengla is now an SVG contrafort-wrapper (see below) */
+
+        /* === BUIDA column (upper left, x=25%) === */
+        .slot.terc-buida   { left: 25%; top: 7%;    transform: translateX(-50%); width: 80px; height: 35px; }
+        .slot.segon-buida  { left: 25%; top: 11.5%; transform: translateX(-50%); width: 80px; height: 35px; }
+        .slot.crossa-buida-1 { left: 17.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* baix-buida is now an SVG baix-wrapper (see below) */
+        .slot.crossa-buida-2 { left: 32.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* contrafort-buida is now an SVG contrafort-wrapper (see below) */
+
+        /* === PLENA column (upper right, x=75%) === */
+        .slot.terc-plena   { left: 75%; top: 7%;    transform: translateX(-50%); width: 80px; height: 35px; }
+        .slot.segon-plena  { left: 75%; top: 11.5%; transform: translateX(-50%); width: 80px; height: 35px; }
+        .slot.crossa-plena-1 { left: 67.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* baix-plena is now an SVG baix-wrapper (see below) */
+        .slot.crossa-plena-2 { left: 82.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* contrafort-plena is now an SVG contrafort-wrapper (see below) */
+
+        /* === AGULLA — SVG triangles forming a bigger equilateral triangle (center) ===
+           Big triangle: side=160px, height≈139px
+           Vertices: D(top)=(80,0)  A(btm-left)=(0,139)  B(btm-right)=(160,139)
+           Center C = centroid = (80, 92.7) — at 2/3 height from apex D
+           Rengla = C·A·B  (bottom, w=160 h=46)  viewBox="0 0 160 47"
+           Buida  = C·D·A  (upper-left, w=80 h=139)  viewBox="0 0 80 139"
+           Plena  = C·D·B  (upper-right, w=80 h=139)  viewBox="0 0 80 139"   */
+
+        .agulla-wrapper {
+            position: absolute;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .agulla-wrapper .agulla-triangle {
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 0 2px var(--border));
+            transition: filter 0.2s;
+        }
+        .agulla-wrapper:hover .agulla-triangle {
+            filter: drop-shadow(0 0 6px var(--accent));
+        }
+        .agulla-wrapper.filled .agulla-triangle polygon {
+            fill: var(--bg-card-hover);
+        }
+        .agulla-wrapper.filled .agulla-triangle {
+            filter: drop-shadow(0 0 3px var(--accent));
+        }
+        .agulla-wrapper.dragging-over .agulla-triangle polygon {
+            stroke-dasharray: 6 3;
+            stroke-width: 3;
+        }
+        .agulla-triangle .slot-label {
+            fill: var(--text-dim);
+            font-size: 10px;
+            pointer-events: none;
+        }
+        .agulla-triangle .slot-name {
+            fill: var(--text);
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .agulla-triangle .slot-height {
+            fill: var(--text-dim);
+            font-size: 9px;
+            pointer-events: none;
+        }
+        .agulla-triangle .indicator-text {
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        /* Rengla — bottom triangle */
+        .agulla-wrapper.agulla-rengla {
+            left: calc(50% - 80px);
+            top: 45%;
+            width: 160px;
+            height: 47px;
+        }
+        /* Buida — upper-left triangle */
+        .agulla-wrapper.agulla-buida {
+            left: calc(50% - 80px);
+            top: calc(45% - 93px);
+            width: 80px;
+            height: 139px;
+        }
+        /* Plena — upper-right triangle */
+        .agulla-wrapper.agulla-plena {
+            left: 50%;
+            top: calc(45% - 93px);
+            width: 80px;
+            height: 139px;
+        }
+
+        /* === BAIX — SVG rectangles touching the agulla outer edges ===
+           Each rectangle is perpendicular to centroid C, touching one
+           outer edge of the big equilateral triangle.
+           Rectangle dimensions: 120px along edge × 55px depth outward.
+           Coordinates computed from big-triangle geometry:
+             D=(0,-93) A=(-80,46) B=(80,46) relative to C at (50%,45%)
+           Rengla: horizontal rect below edge A→B
+           Buida:  tilted rect outside edge D→A (upper-left)
+           Plena:  tilted rect outside edge D→B (upper-right)          */
+
+        .baix-wrapper {
+            position: absolute;
+            cursor: pointer;
+            z-index: 9;
+        }
+        .baix-wrapper .baix-rect {
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 0 2px var(--border));
+            transition: filter 0.2s;
+        }
+        .baix-wrapper:hover .baix-rect {
+            filter: drop-shadow(0 0 6px var(--accent));
+        }
+        .baix-wrapper.filled .baix-rect polygon {
+            fill: var(--bg-card-hover);
+        }
+        .baix-wrapper.filled .baix-rect {
+            filter: drop-shadow(0 0 3px var(--accent));
+        }
+        .baix-wrapper.dragging-over .baix-rect polygon {
+            stroke-dasharray: 6 3;
+            stroke-width: 3;
+        }
+        .baix-rect .slot-label {
+            fill: var(--text-dim);
+            font-size: 10px;
+            pointer-events: none;
+        }
+        .baix-rect .slot-name {
+            fill: var(--text);
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .baix-rect .slot-height {
+            fill: var(--text-dim);
+            font-size: 9px;
+            pointer-events: none;
+        }
+        .baix-rect .indicator-text {
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        /* Rengla — bottom rectangle (horizontal, below edge A→B) */
+        .baix-wrapper.baix-rengla {
+            left: calc(50% - 60px);
+            top: calc(45% + 47px);
+            width: 120px;
+            height: 55px;
+        }
+        /* Buida — upper-left rectangle (tilted, outside edge D→A) */
+        .baix-wrapper.baix-buida {
+            left: calc(50% - 118px);
+            top: calc(45% - 103px);
+            width: 108px;
+            height: 132px;
+        }
+        /* Plena — upper-right rectangle (tilted, outside edge D→B) */
+        .baix-wrapper.baix-plena {
+            left: calc(50% + 10px);
+            top: calc(45% - 103px);
+            width: 108px;
+            height: 132px;
+        }
+
+        /* === CONTRAFORT — SVG rectangles behind baix (further from agulla) ===
+           Same shape as baix, translated 55px further outward from centroid C.
+           Contrafort is behind baix, opposite side from the agulla.
+           Geometry: same edge-perpendicular parallelograms, offset by 55px.  */
+
+        .contrafort-wrapper {
+            position: absolute;
+            cursor: pointer;
+            z-index: 8;
+        }
+        .contrafort-wrapper .contrafort-rect {
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 0 2px var(--border));
+            transition: filter 0.2s;
+        }
+        .contrafort-wrapper:hover .contrafort-rect {
+            filter: drop-shadow(0 0 6px var(--accent));
+        }
+        .contrafort-wrapper.filled .contrafort-rect polygon {
+            fill: var(--bg-card-hover);
+        }
+        .contrafort-wrapper.filled .contrafort-rect {
+            filter: drop-shadow(0 0 3px var(--accent));
+        }
+        .contrafort-wrapper.dragging-over .contrafort-rect polygon {
+            stroke-dasharray: 6 3;
+            stroke-width: 3;
+        }
+        .contrafort-rect .slot-label {
+            fill: var(--text-dim);
+            font-size: 10px;
+            pointer-events: none;
+        }
+        .contrafort-rect .slot-name {
+            fill: var(--text);
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .contrafort-rect .slot-height {
+            fill: var(--text-dim);
+            font-size: 9px;
+            pointer-events: none;
+        }
+        .contrafort-rect .indicator-text {
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        /* Rengla — bottom rectangle (horizontal, below baix-rengla) */
+        .contrafort-wrapper.contrafort-rengla {
+            left: calc(50% - 60px);
+            top: calc(45% + 102px);
+            width: 120px;
+            height: 55px;
+        }
+        /* Buida — upper-left rectangle (tilted, behind baix-buida) */
+        .contrafort-wrapper.contrafort-buida {
+            left: calc(50% - 165px);
+            top: calc(45% - 131px);
+            width: 108px;
+            height: 133px;
+        }
+        /* Plena — upper-right rectangle (tilted, behind baix-plena) */
+        .contrafort-wrapper.contrafort-plena {
+            left: calc(50% + 57px);
+            top: calc(45% - 131px);
+            width: 108px;
+            height: 133px;
+        }
+
+        /* === DOSOS (pom — center of triangle) === */
+        .slot.dosos-1 { left: 47%; top: 38%; transform: translateX(-50%); width: 60px; height: 35px; }
+        .slot.dosos-2 { left: 53%; top: 38%; transform: translateX(-50%); width: 60px; height: 35px; }
+
+        /* === MANS — SVG rectangles stacking behind contrafort ===
+           Same shape as baix/contrafort, extending in a line perpendicular
+           to centroid C. One rectangle per casteller in the queue.
+           Positioned dynamically via JavaScript based on depth index.  */
+
+        .mans-wrapper {
+            position: absolute;
+            cursor: pointer;
+            z-index: 7;
+        }
+        .mans-wrapper .mans-rect {
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 0 2px var(--border));
+            transition: filter 0.2s;
+        }
+        .mans-wrapper:hover .mans-rect {
+            filter: drop-shadow(0 0 6px var(--accent));
+        }
+        .mans-wrapper.filled .mans-rect polygon {
+            fill: var(--bg-card-hover);
+        }
+        .mans-wrapper.filled .mans-rect {
+            filter: drop-shadow(0 0 3px var(--accent));
+        }
+        .mans-wrapper.dragging-over .mans-rect polygon {
+            stroke-dasharray: 6 3;
+            stroke-width: 3;
+        }
+        .mans-rect .slot-label {
+            fill: var(--text-dim);
+            font-size: 10px;
+            pointer-events: none;
+        }
+        .mans-rect .slot-name {
+            fill: var(--text);
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .mans-rect .slot-height {
+            fill: var(--text-dim);
+            font-size: 9px;
+            pointer-events: none;
+        }
+        .mans-rect .indicator-text {
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        /* DAUS queues — between adjacent columns (no rotation) */
+        .queue-daus-rp {
+            left: 66%; top: 44%;
+            transform: translateX(-50%);
+        }
+        .queue-daus-pb {
+            left: 50%; top: 7%;
+            transform: translateX(-50%);
+        }
+        .queue-daus-br {
+            left: 34%; top: 44%;
+            transform: translateX(-50%);
+        }
+
+        /* LATERALS queues — flanking each column (no rotation) */
+        .queue-laterals-rengla-left  { left: 33%; top: 63%; transform: translateX(-50%); }
+        .queue-laterals-rengla-right { left: 67%; top: 63%; transform: translateX(-50%); }
+        .queue-laterals-plena-left   { left: 59%; top: 27%; transform: translateX(-50%); }
+        .queue-laterals-plena-right  { left: 91%; top: 27%; transform: translateX(-50%); }
+        .queue-laterals-buida-left   { left:  9%; top: 27%; transform: translateX(-50%); }
+        .queue-laterals-buida-right  { left: 41%; top: 27%; transform: translateX(-50%); }
+
+        .queue-slot {
+            margin-bottom: 3px;
+            width: 75px;
+            height: 42px;
+            font-size: 10px;
+        }
+
+        .queue-container {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .queue-slot .slot-name {
+            font-size: 10px;
+            line-height: 1.1;
+        }
+        
+        .queue-slot .slot-height {
+            font-size: 9px;
+        }
+        
+        .queue-slot .slot-indicators {
+            margin-top: 2px;
+        }
+        
+        .queue-slot .indicator {
+            width: 12px;
+            height: 12px;
+            font-size: 8px;
+        }
+        
+        .queue-container::before {
+            content: attr(data-queue-type) ' ' attr(data-queue-id);
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 9px;
+            color: var(--accent);
+            opacity: 0.4;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            background: var(--bg-dark);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .column-label {
+            position: absolute;
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--text-dim);
+            opacity: 0.3;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .label-rengla {
+            left: 50%;
+            top: 96%;
+            transform: translateX(-50%);
+            color: var(--rengla);
+        }
+        
+        .label-plena {
+            left: 92%;
+            top: 5%;
+            transform: translateX(-50%);
+            color: var(--plena);
+        }
+        
+        .label-buida {
+            left: 8%;
+            top: 5%;
+            transform: translateX(-50%);
+            color: var(--buida);
+        }
+        
+        /* Triangle guide */
+        .tronc-triangle {
+            position: absolute;
+            left: 50%;
+            top: 40%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 520px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .tronc-triangle::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            border: 2px dashed rgba(255, 255, 255, 0.05);
+            clip-path: polygon(50% 100%, 10% 0%, 90% 0%);
+        }
+
+        .queue-add-btn {
+            width: 75px;
+            height: 28px;
+            background: var(--bg-dark);
+            border: 1px dashed var(--border);
+            border-radius: 4px;
+            color: var(--text-dim);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            margin-top: 4px;
+            transition: all 0.2s;
+        }
+
+        .queue-add-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-dark);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .highlight-new {
+            animation: highlight 1s ease;
+        }
+
+        @keyframes highlight {
+            0%, 100% { background: var(--bg-card-hover); }
+            50% { background: rgba(217, 148, 74, 0.3); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <div class="header">
+            <h1>3d6 Castell Pinya Assignment</h1>
+            <div class="header-actions">
+                <div class="history-controls">
+                    <button class="btn secondary" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
+                    <button class="btn secondary" id="redoBtn" title="Redo (Ctrl+Y)">↷ Redo</button>
+                </div>
+                <button class="btn" id="autoCompleteBtn">🤖 Auto-Complete Pinya</button>
+                <button class="btn secondary" id="loadBtn">📂 Load</button>
+                <button class="btn secondary" id="saveBtn">💾 Save</button>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel">
+            <h2>⚙ Settings</h2>
+            <div id="settingsContent"></div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="canvas" id="canvas">
+            <div class="zoom-controls">
+                <button class="zoom-btn" id="zoomInBtn">+</button>
+                <button class="zoom-btn" id="zoomOutBtn">−</button>
+                <button class="zoom-btn" id="zoomResetBtn">⊙</button>
+            </div>
+            <div class="canvas-inner" id="canvasInner">
+                <!-- Pinya slots will be dynamically generated here -->
+            </div>
+        </div>
+
+        <!-- Pool Panel -->
+        <div class="pool-panel">
+            <div class="pool-header">
+                <h2>
+                    Unassigned Pool
+                    <span class="pool-count" id="poolCount">0 / 0</span>
+                </h2>
+                <input type="text" class="pool-search" id="poolSearch" placeholder="Search castellers...">
+                <div class="pool-controls">
+                    <select id="poolSort">
+                        <option value="name">Sort by Name</option>
+                        <option value="height">Sort by Height</option>
+                        <option value="position">Sort by Position</option>
+                    </select>
+                    <button class="btn" id="addCastellerBtn" style="padding: 6px 12px; font-size: 12px;">+ Add</button>
+                </div>
+            </div>
+            <div class="pool-list" id="poolList"></div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar"></div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal" id="castellerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add Casteller</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="castellerForm">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="formName" required>
+                </div>
+                <div class="form-group">
+                    <label>Height (cm) *</label>
+                    <input type="number" id="formHeight" min="100" max="250" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label>Position 1</label>
+                    <select id="formPosition1">
+                        <option value="">None</option>
+                        <option value="Baix">Baix</option>
+                        <option value="Segon">Segon</option>
+                        <option value="Terç">Terç</option>
+                        <option value="Crossa">Crossa</option>
+                        <option value="Contrafort">Contrafort</option>
+                        <option value="Agulla">Agulla</option>
+                        <option value="Primeres">Primeres</option>
+                        <option value="Dau/Vent">Dau/Vent</option>
+                        <option value="Lateral">Lateral</option>
+                        <option value="Dosos">Dosos</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Position 2</label>
+                    <select id="formPosition2">
+                        <option value="">None</option>
+                        <option value="Baix">Baix</option>
+                        <option value="Segon">Segon</option>
+                        <option value="Terç">Terç</option>
+                        <option value="Crossa">Crossa</option>
+                        <option value="Contrafort">Contrafort</option>
+                        <option value="Agulla">Agulla</option>
+                        <option value="Primeres">Primeres</option>
+                        <option value="Dau/Vent">Dau/Vent</option>
+                        <option value="Lateral">Lateral</option>
+                        <option value="Dosos">Dosos</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Weight (kg)</label>
+                    <input type="number" id="formWeight" min="30" max="150" step="0.1">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <input type="file" id="fileInput" accept=".json" style="display: none;">
+
+    <script>
+        // ============================================================================
+        // STATE MANAGEMENT
+        // ============================================================================
+        
+        const SAMPLE_DATA = {
+            "castellers": [
+                {"name": "Mario B", "height": 164.0, "position_1": "Baix", "position_2": "Segon"},
+                {"name": "Víctor S", "height": 172.0, "position_1": "Baix", "position_2": "Contrafort"},
+                {"name": "Esteve", "height": 170.0, "position_1": "Baix", "position_2": "Contrafort"},
+                {"name": "Joan Calvet", "height": 181.0, "position_1": "Segon", "position_2": "Primeres"},
+                {"name": "Vela", "height": 172.0, "position_1": "Segon", "position_2": "Baix"},
+                {"name": "Emili", "height": 174.0, "position_1": "Segon", "position_2": "Lateral"},
+                {"name": "Josep", "height": 164.0, "position_1": "Terç", "position_2": "Segon"},
+                {"name": "Nora", "height": 165.0, "position_1": "Terç", "position_2": "Crossa"},
+                {"name": "Llibert", "height": 168.0, "position_1": "Terç", "position_2": "Baix"},
+                {"name": "Irene Cucu", "height": 158.0, "position_1": "Dosos", "position_2": "Crossa"},
+                {"name": "Laia A", "height": 160.0, "position_1": "Dosos", "position_2": "Quart"},
+                {"name": "Blanca March", "height": 160.0, "position_1": "Terç", "position_2": "Crossa"},
+                {"name": "Júlia S", "height": 154.0, "position_1": "Crossa", "position_2": "Terç"},
+                {"name": "Basulto", "height": 168.0, "position_1": "Dosos", "position_2": "Crossa"},
+                {"name": "Sofia Romagosa", "height": 168.0, "position_1": "Crossa", "position_2": "Dosos"},
+                {"name": "Gebe", "height": 162.0, "position_1": "Terç", "position_2": "Crossa"},
+                {"name": "Lena", "height": 164.0, "position_1": "Crossa", "position_2": "Terç"},
+                {"name": "Elisenda Planell", "height": 162.0, "position_1": "Contrafort", "position_2": "Lateral"},
+                {"name": "Solanas", "height": 170.0, "position_1": "Segon", "position_2": "Contrafort"},
+                {"name": "Raquel Correa", "height": 164.0, "position_1": "Contrafort", "position_2": "Lateral"},
+                {"name": "Sofia W", "height": 175.0, "position_1": "Agulla", "position_2": "Lateral"},
+                {"name": "Arlet", "height": 176.0, "position_1": "Agulla", "position_2": "Dau/Vent"},
+                {"name": "Alexis", "height": 173.0, "position_1": "Lateral", "position_2": "Agulla"},
+                {"name": "Xavi González", "height": 188.0, "position_1": "Primeres", "position_2": "Dau/Vent"},
+                {"name": "Luca Fawe", "height": 180.0, "position_1": "Primeres", "position_2": "Lateral"},
+                {"name": "Léa Braillon", "height": 177.0, "position_1": "", "position_2": ""},
+                {"name": "Rafel", "height": 175.0, "position_1": "Lateral", "position_2": "Agulla"},
+                {"name": "Manu", "height": 188.0, "position_1": "Primeres", "position_2": "Dau/Vent"},
+                {"name": "Marc Fawe", "height": 180.0, "position_1": "Dau/Vent", "position_2": "Primeres"},
+                {"name": "Isaac", "height": 178.0, "position_1": "Lateral", "position_2": "Agulla"},
+                {"name": "Xavi Bronchal", "height": 168.0, "position_1": "Dosos", "position_2": "Quart"},
+                {"name": "Amanda", "height": 167.0, "position_1": "Terç", "position_2": ""},
+                {"name": "Albert B", "height": 181.0, "position_1": "Primeres", "position_2": "Lateral"},
+                {"name": "Biel Pruna", "height": 180.0, "position_1": "Lateral", "position_2": "Agulla"},
+                {"name": "Lluís", "height": 172.0, "position_1": "Segon", "position_2": "Terç"},
+                {"name": "Àngels", "height": 164.0, "position_1": "Contrafort", "position_2": "Crossa"},
+                {"name": "Robert", "height": 186.0, "position_1": "Dau/Vent", "position_2": "Primeres"},
+                {"name": "Anna Romagosa", "height": 170.0, "position_1": "", "position_2": ""},
+                {"name": "Sophie Aubert", "height": 163.0, "position_1": "", "position_2": ""},
+                {"name": "Davide Mattei", "height": 189.0, "position_1": "", "position_2": ""},
+                {"name": "Miquel Sistach", "height": 185.0, "position_1": "", "position_2": ""},
+                {"name": "Alex (Londres)", "height": 178.0, "position_1": "Segon", "position_2": "Lateral"},
+                {"name": "Marc G", "height": 179.0, "position_1": "Segon", "position_2": "Dau/Vent"},
+                {"name": "Dolça", "height": 162.0, "position_1": "Crossa", "position_2": "Contrafort"},
+                {"name": "Joan G", "height": 171.0, "position_1": "Segon", "position_2": "Baix"},
+                {"name": "Daan", "height": 180.0, "position_1": "Lateral", "position_2": "Primeres"},
+                {"name": "Amadeu", "height": 177.0, "position_1": "Dau/Vent", "position_2": "Lateral"},
+                {"name": "Alícia", "height": 168.0, "position_1": "Baix", "position_2": "Segon"},
+                {"name": "Cristina Gómez", "height": 169.0, "position_1": "Crossa", "position_2": "Terç"},
+                {"name": "Mercè", "height": 165.0, "position_1": "Lateral", "position_2": "Crossa"},
+                {"name": "Sesé", "height": 171.0, "position_1": "Contrafort", "position_2": "Lateral"},
+                {"name": "Sofia R", "height": 168.0, "position_1": "Crossa", "position_2": "Dosos"}
+            ],
+            "initial_assignments": {
+                "dosos": {"Rengla": ["Irene Cucu"], "Plena-Buida": ["Laia A"]},
+                "segon": {"Rengla": ["Joan Calvet"], "Plena": ["Vela"], "Buida": ["Emili"]},
+                "terç": {"Rengla": ["Josep"], "Plena": ["Nora"], "Buida": ["Llibert"]},
+                "baix": {"Rengla": ["Mario B"], "Plena": ["Víctor S"], "Buida": ["Esteve"]},
+                "crossa": {
+                    "Rengla": ["Blanca March", "Júlia S"],
+                    "Plena": ["Basulto", "Sofia Romagosa"],
+                    "Buida": ["Gebe", "Lena"]
+                },
+                "contrafort": {"Rengla": ["Elisenda Planell"], "Plena": ["Solanas"], "Buida": ["Raquel Correa"]},
+                "agulla": {"Rengla": ["Sofia W"], "Plena": ["Arlet"], "Buida": ["Alexis"]},
+                "mans": {
+                    "Rengla": [["Xavi González"], ["Luca Fawe"], ["Léa Braillon"], ["Rafel"]],
+                    "Plena": [["Manu"], ["Marc Fawe"], ["Isaac"], ["Xavi Bronchal"], ["Amanda"]],
+                    "Buida": [["Albert B"], ["Biel Pruna"], ["Lluís"], ["Àngels"]]
+                },
+                "daus": {
+                    "R↔P": [["Robert"], ["Anna Romagosa"], ["Sophie Aubert"]],
+                    "P↔B": [["Davide Mattei"], ["Miquel Sistach"], ["Alex (Londres)"]],
+                    "B↔R": [["Marc G"], ["Dolça"]]
+                },
+                "laterals": {
+                    "Rengla-left": [["Joan G"]],
+                    "Rengla-right": [["Mercè"]],
+                    "Plena-left": [["Amadeu"], ["Alícia"]],
+                    "Plena-right": [["Daan"]],
+                    "Buida-left": [["Cristina Gómez"]],
+                    "Buida-right": [["Sesé"], ["Sofia R"]]
+                }
+            }
+        };
+
+        const DEFAULT_CONFIG = {
+            optimization: {
+                method: 'adaptive_simulated_annealing',
+                use_weight: false
+            },
+            positions: {
+                baix: {
+                    height_ratio_min: 1.0,
+                    height_ratio_max: 1.0,
+                    height_weight: 0.0,
+                    expertise_weight: 1.0,
+                    weight_factor: 0.5,
+                    height_penalty_factor: 0.10,
+                    weight_preference: 'heavier'
+                },
+                crossa: {
+                    height_ratio_min: 0.90,
+                    height_ratio_max: 0.95,
+                    height_weight: 1.0,
+                    expertise_weight: 0.5,
+                    height_similarity_weight: 0.5,
+                    weight_factor: 0.2,
+                    height_penalty_factor: 0.10,
+                    weight_preference: 'neutral'
+                },
+                contrafort: {
+                    height_ratio_min: 1.00,
+                    height_ratio_max: 1.05,
+                    height_weight: 1.0,
+                    expertise_weight: 0.5,
+                    height_similarity_weight: 0.3,
+                    weight_factor: 0.3,
+                    height_penalty_factor: 0.10,
+                    weight_preference: 'heavier'
+                },
+                agulla: {
+                    height_ratio_min: 0.50,
+                    height_ratio_max: 0.515,
+                    height_weight: 1.0,
+                    expertise_weight: 0.5,
+                    weight_factor: 0.3,
+                    height_penalty_factor: 0.10,
+                    weight_preference: 'lighter'
+                }
+            },
+            queues: {
+                mans: {
+                    max_depth: 4,
+                    height_ratio_min: 0.50,
+                    height_ratio_max: 0.60,
+                    queue_height_ratio_min: 0.975,
+                    queue_height_ratio_max: 1.00,
+                    height_weight: 0.6,
+                    expertise_weight: 0.5,
+                    height_similarity_weight: 0.5,
+                    weight_factor: 0.2,
+                    height_penalty_factor: 1.0,
+                    weight_preference: 'heavier'
+                },
+                daus: {
+                    max_depth: 3,
+                    height_ratio_min: 0.50,
+                    height_ratio_max: 0.60,
+                    queue_height_ratio_min: 0.975,
+                    queue_height_ratio_max: 1.00,
+                    height_weight: 0.6,
+                    expertise_weight: 0.5,
+                    height_similarity_weight: 0.5,
+                    weight_factor: 0.3,
+                    height_penalty_factor: 1.0,
+                    weight_preference: 'heavier'
+                },
+                laterals: {
+                    max_depth: 2,
+                    height_ratio_min: 0.48,
+                    height_ratio_max: 0.50,
+                    queue_height_ratio_min: 0.975,
+                    queue_height_ratio_max: 1.0,
+                    height_weight: 0.8,
+                    expertise_weight: 0.3,
+                    height_similarity_weight: 0.5,
+                    weight_factor: 0.2,
+                    height_penalty_factor: 1.0,
+                    weight_preference: 'neutral'
+                }
+            }
+        };
+
+        /* Per-column geometry for dynamically positioned mans SVG wrappers.
+           baseLeft / baseTop are offsets (px) from 50% / 45% for depth 0.
+           dLeft / dTop are the per-depth increments (outward from centroid). */
+        const MANS_GEOMETRY = {
+            'Rengla': {
+                baseLeft: -60, baseTop: 157, dLeft: 0, dTop: 55,
+                w: 120, h: 55,
+                viewBox: '0 0 120 55',
+                points: '0,0 120,0 120,55 0,55',
+                stroke: 'var(--rengla)',
+                textX: 60, textY: 35
+            },
+            'Buida': {
+                baseLeft: -212, baseTop: -159, dLeft: -47, dTop: -28,
+                w: 108, h: 133,
+                viewBox: '0 0 108 133',
+                points: '48,132 108,27 60,0 0,104',
+                stroke: 'var(--buida)',
+                textX: 54, textY: 67
+            },
+            'Plena': {
+                baseLeft: 104, baseTop: -159, dLeft: 47, dTop: -28,
+                w: 108, h: 133,
+                viewBox: '0 0 108 133',
+                points: '60,132 0,27 48,0 108,104',
+                stroke: 'var(--plena)',
+                textX: 54, textY: 67
+            }
+        };
+
+        class AppState {
+            constructor() {
+                this.castellers = [];
+                this.assignments = {
+                    dosos: {},
+                    baix: {},
+                    segon: {},
+                    terç: {},
+                    crossa: {},
+                    contrafort: {},
+                    agulla: {},
+                    mans: {},
+                    daus: {},
+                    laterals: {}
+                };
+                this.config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+                this.history = [];
+                this.historyIndex = -1;
+                this.zoom = 1;
+                this.draggedElement = null;
+                this.draggedCasteller = null;
+            }
+
+            loadSampleData() {
+                this.castellers = JSON.parse(JSON.stringify(SAMPLE_DATA.castellers));
+                this.assignments = JSON.parse(JSON.stringify(SAMPLE_DATA.initial_assignments));
+                this.saveHistory('Initial load');
+            }
+
+            getCasteller(name) {
+                return this.castellers.find(c => c.name === name);
+            }
+
+            getAssignedNames() {
+                const names = new Set();
+                for (const [pos, cols] of Object.entries(this.assignments)) {
+                    for (const val of Object.values(cols)) {
+                        if (Array.isArray(val)) {
+                            if (val.length > 0 && Array.isArray(val[0])) {
+                                // Queue position
+                                val.forEach(depth => {
+                                    if (depth[0]) names.add(depth[0]);
+                                });
+                            } else {
+                                // Regular position
+                                val.forEach(name => {
+                                    if (name) names.add(name);
+                                });
+                            }
+                        }
+                    }
+                }
+                return names;
+            }
+
+            getUnassigned() {
+                const assigned = this.getAssignedNames();
+                return this.castellers.filter(c => !assigned.has(c.name));
+            }
+
+            assignToSlot(positionId, name) {
+                const [posType, col, idx] = this.parsePositionId(positionId);
+                
+                // Remove from previous assignment if exists
+                this.removeFromAssignments(name);
+
+                if (['mans', 'daus', 'laterals'].includes(posType)) {
+                    // Queue position
+                    if (!this.assignments[posType][col]) {
+                        this.assignments[posType][col] = [];
+                    }
+                    while (this.assignments[posType][col].length <= idx) {
+                        this.assignments[posType][col].push([null]);
+                    }
+                    this.assignments[posType][col][idx] = [name];
+                } else {
+                    // Regular position
+                    if (!this.assignments[posType][col]) {
+                        this.assignments[posType][col] = [];
+                    }
+                    if (idx !== undefined) {
+                        while (this.assignments[posType][col].length <= idx) {
+                            this.assignments[posType][col].push(null);
+                        }
+                        this.assignments[posType][col][idx] = name;
+                    } else {
+                        this.assignments[posType][col] = [name];
+                    }
+                }
+            }
+
+            removeFromSlot(positionId) {
+                const [posType, col, idx] = this.parsePositionId(positionId);
+                
+                if (posType === 'mans') {
+                    // Stack behavior: splice out and shift everyone behind forward
+                    if (this.assignments.mans[col] && idx < this.assignments.mans[col].length) {
+                        this.assignments.mans[col].splice(idx, 1);
+                    }
+                } else if (['daus', 'laterals'].includes(posType)) {
+                    if (this.assignments[posType][col] && this.assignments[posType][col][idx]) {
+                        this.assignments[posType][col][idx] = [null];
+                    }
+                } else {
+                    if (this.assignments[posType][col]) {
+                        if (idx !== undefined) {
+                            this.assignments[posType][col][idx] = null;
+                        } else {
+                            this.assignments[posType][col] = [];
+                        }
+                    }
+                }
+            }
+
+            removeFromAssignments(name) {
+                for (const [posType, cols] of Object.entries(this.assignments)) {
+                    for (const [col, val] of Object.entries(cols)) {
+                        if (Array.isArray(val)) {
+                            if (val.length > 0 && Array.isArray(val[0])) {
+                                // Queue position — use splice for mans to implement stack shift
+                                if (posType === 'mans') {
+                                    for (let i = val.length - 1; i >= 0; i--) {
+                                        if (val[i][0] === name) {
+                                            val.splice(i, 1);
+                                        }
+                                    }
+                                } else {
+                                    for (let i = 0; i < val.length; i++) {
+                                        if (val[i][0] === name) {
+                                            val[i] = [null];
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Regular position
+                                for (let i = 0; i < val.length; i++) {
+                                    if (val[i] === name) {
+                                        val[i] = null;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            getSlotContent(positionId) {
+                const [posType, col, idx] = this.parsePositionId(positionId);
+                
+                if (!this.assignments[posType]) return null;
+                
+                if (['mans', 'daus', 'laterals'].includes(posType)) {
+                    if (this.assignments[posType][col] && this.assignments[posType][col][idx]) {
+                        return this.assignments[posType][col][idx][0];
+                    }
+                } else {
+                    if (this.assignments[posType][col]) {
+                        if (idx !== undefined) {
+                            return this.assignments[posType][col][idx];
+                        } else {
+                            return this.assignments[posType][col][0];
+                        }
+                    }
+                }
+                return null;
+            }
+
+            parsePositionId(id) {
+                // Format: "posType-col-idx" or "posType-col"
+                const parts = id.split('-');
+                let posType = parts[0];
+                // Map ASCII IDs to actual assignment keys (CSS class names can't use cedilla)
+                const TYPE_MAP = { 'terc': 'terç' };
+                posType = TYPE_MAP[posType] || posType;
+                const col = parts.slice(1, -1).join('-') || parts[1];
+                const idx = parts.length > 2 && !isNaN(parts[parts.length - 1]) ? parseInt(parts[parts.length - 1]) : undefined;
+                return [posType, col, idx];
+            }
+
+            addCasteller(casteller) {
+                if (this.castellers.find(c => c.name === casteller.name)) {
+                    throw new Error('Casteller with this name already exists');
+                }
+                this.castellers.push(casteller);
+                this.saveHistory(`Added ${casteller.name}`);
+            }
+
+            removeCasteller(name) {
+                this.removeFromAssignments(name);
+                this.castellers = this.castellers.filter(c => c.name !== name);
+                this.saveHistory(`Removed ${name}`);
+            }
+
+            updateCasteller(oldName, newCasteller) {
+                const idx = this.castellers.findIndex(c => c.name === oldName);
+                if (idx === -1) return;
+                
+                if (oldName !== newCasteller.name) {
+                    // Name changed - update assignments
+                    for (const [posType, cols] of Object.entries(this.assignments)) {
+                        for (const [col, val] of Object.entries(cols)) {
+                            if (Array.isArray(val)) {
+                                if (val.length > 0 && Array.isArray(val[0])) {
+                                    // Queue
+                                    for (let i = 0; i < val.length; i++) {
+                                        if (val[i][0] === oldName) {
+                                            val[i] = [newCasteller.name];
+                                        }
+                                    }
+                                } else {
+                                    // Regular
+                                    for (let i = 0; i < val.length; i++) {
+                                        if (val[i] === oldName) {
+                                            val[i] = newCasteller.name;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                this.castellers[idx] = newCasteller;
+                this.saveHistory(`Updated ${newCasteller.name}`);
+            }
+
+            saveHistory(action) {
+                // Trim future history if we're not at the end
+                this.history = this.history.slice(0, this.historyIndex + 1);
+                
+                this.history.push({
+                    action,
+                    state: {
+                        castellers: JSON.parse(JSON.stringify(this.castellers)),
+                        assignments: JSON.parse(JSON.stringify(this.assignments))
+                    }
+                });
+                
+                this.historyIndex++;
+                
+                // Limit history to 50 entries
+                if (this.history.length > 50) {
+                    this.history.shift();
+                    this.historyIndex--;
+                }
+                
+                updateHistoryButtons();
+            }
+
+            undo() {
+                if (this.historyIndex > 0) {
+                    this.historyIndex--;
+                    const snapshot = this.history[this.historyIndex];
+                    this.castellers = JSON.parse(JSON.stringify(snapshot.state.castellers));
+                    this.assignments = JSON.parse(JSON.stringify(snapshot.state.assignments));
+                    return true;
+                }
+                return false;
+            }
+
+            redo() {
+                if (this.historyIndex < this.history.length - 1) {
+                    this.historyIndex++;
+                    const snapshot = this.history[this.historyIndex];
+                    this.castellers = JSON.parse(JSON.stringify(snapshot.state.castellers));
+                    this.assignments = JSON.parse(JSON.stringify(snapshot.state.assignments));
+                    return true;
+                }
+                return false;
+            }
+
+            exportJSON() {
+                const assigned = this.getAssignedNames();
+                const unassigned = this.castellers.filter(c => !assigned.has(c.name));
+
+                return {
+                    assignments: this.assignments,
+                    summary: {
+                        total_assigned: assigned.size,
+                        unassigned: unassigned
+                    },
+                    configuration: {
+                        columns: ['Rengla', 'Plena', 'Buida'],
+                        tronc_positions: ['baix', 'segon', 'terç'],
+                        optimization_method: this.config.optimization.method,
+                        use_weight: this.config.optimization.use_weight
+                    }
+                };
+            }
+
+            importJSON(data) {
+                if (data.castellers) {
+                    this.castellers = data.castellers;
+                }
+                if (data.initial_assignments || data.assignments) {
+                    this.assignments = data.initial_assignments || data.assignments;
+                }
+                if (data.configuration) {
+                    if (data.configuration.optimization_method) {
+                        this.config.optimization.method = data.configuration.optimization_method;
+                    }
+                    if (data.configuration.use_weight !== undefined) {
+                        this.config.optimization.use_weight = data.configuration.use_weight;
+                    }
+                }
+                this.saveHistory('Imported data');
+            }
+        }
+
+        const state = new AppState();
+
+        // ============================================================================
+        // UI RENDERING
+        // ============================================================================
+
+        function initPinya() {
+            const container = document.getElementById('canvasInner');
+            container.innerHTML = '';
+
+            // Create all position slots
+            createSlots(container);
+            
+            // Render current assignments
+            updateAllSlots();
+        }
+
+        function createSlots(container) {
+            // Add triangle guide
+            const triangle = document.createElement('div');
+            triangle.className = 'tronc-triangle';
+            container.appendChild(triangle);
+            
+            // Add column labels
+            const labels = [
+                { text: 'R', class: 'label-rengla' },
+                { text: 'P', class: 'label-plena' },
+                { text: 'B', class: 'label-buida' }
+            ];
+            
+            labels.forEach(labelConfig => {
+                const label = document.createElement('div');
+                label.className = `column-label ${labelConfig.class}`;
+                label.textContent = labelConfig.text;
+                container.appendChild(label);
+            });
+            
+            const positions = [
+                // BAIX — now created as SVG baix-wrappers (see baixConfigs below)
+                
+                // TRONC (read-only)
+                { id: 'segon-Rengla', type: 'segon', col: 'Rengla', label: 'Segon R', class: 'segon-rengla tronc', readOnly: true },
+                { id: 'segon-Plena', type: 'segon', col: 'Plena', label: 'Segon P', class: 'segon-plena tronc', readOnly: true },
+                { id: 'segon-Buida', type: 'segon', col: 'Buida', label: 'Segon B', class: 'segon-buida tronc', readOnly: true },
+                
+                { id: 'terc-Rengla', type: 'terç', col: 'Rengla', label: 'Terç R', class: 'terc-rengla tronc', readOnly: true },
+                { id: 'terc-Plena', type: 'terç', col: 'Plena', label: 'Terç P', class: 'terc-plena tronc', readOnly: true },
+                { id: 'terc-Buida', type: 'terç', col: 'Buida', label: 'Terç B', class: 'terc-buida tronc', readOnly: true },
+                
+                // DOSOS
+                { id: 'dosos-Rengla-0', type: 'dosos', col: 'Rengla', label: 'Dosos R', class: 'dosos-1 tronc', readOnly: true },
+                { id: 'dosos-Plena-Buida-0', type: 'dosos', col: 'Plena-Buida', label: 'Dosos P-B', class: 'dosos-2 tronc', readOnly: true },
+                
+                // CROSSA
+                { id: 'crossa-Rengla-0', type: 'crossa', col: 'Rengla', idx: 0, label: 'Crossa R-1', class: 'crossa-rengla-1 col-rengla' },
+                { id: 'crossa-Rengla-1', type: 'crossa', col: 'Rengla', idx: 1, label: 'Crossa R-2', class: 'crossa-rengla-2 col-rengla' },
+                { id: 'crossa-Plena-0', type: 'crossa', col: 'Plena', idx: 0, label: 'Crossa P-1', class: 'crossa-plena-1 col-plena' },
+                { id: 'crossa-Plena-1', type: 'crossa', col: 'Plena', idx: 1, label: 'Crossa P-2', class: 'crossa-plena-2 col-plena' },
+                { id: 'crossa-Buida-0', type: 'crossa', col: 'Buida', idx: 0, label: 'Crossa B-1', class: 'crossa-buida-1 col-buida' },
+                { id: 'crossa-Buida-1', type: 'crossa', col: 'Buida', idx: 1, label: 'Crossa B-2', class: 'crossa-buida-2 col-buida' },
+                
+                // CONTRAFORT — now SVG contrafort-wrapper (see below)
+                
+            ];
+
+            positions.forEach(pos => {
+                const slot = createSlot(pos);
+                container.appendChild(slot);
+            });
+
+            // AGULLA — SVG triangles
+            const agullaConfigs = [
+                {
+                    id: 'agulla-Rengla', col: 'Rengla', label: 'Agulla R',
+                    cls: 'agulla-rengla col-rengla',
+                    viewBox: '0 0 160 47', w: 160, h: 47,
+                    points: '80,0 0,47 160,47',
+                    stroke: 'var(--rengla)',
+                    textX: 80, textY: 35
+                },
+                {
+                    id: 'agulla-Buida', col: 'Buida', label: 'Agulla B',
+                    cls: 'agulla-buida col-buida',
+                    viewBox: '0 0 80 139', w: 80, h: 139,
+                    points: '80,93 80,0 0,139',
+                    stroke: 'var(--buida)',
+                    textX: 42, textY: 85
+                },
+                {
+                    id: 'agulla-Plena', col: 'Plena', label: 'Agulla P',
+                    cls: 'agulla-plena col-plena',
+                    viewBox: '0 0 80 139', w: 80, h: 139,
+                    points: '0,93 0,0 80,139',
+                    stroke: 'var(--plena)',
+                    textX: 38, textY: 85
+                }
+            ];
+            agullaConfigs.forEach(cfg => {
+                // Wrapper div for drag-and-drop support
+                const wrapper = document.createElement('div');
+                wrapper.className = `agulla-wrapper ${cfg.cls}`;
+                wrapper.dataset.positionId = cfg.id;
+                wrapper.dataset.positionType = 'agulla';
+                wrapper.dataset.readOnly = 'false';
+
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'agulla-triangle');
+                svg.setAttribute('viewBox', cfg.viewBox);
+                svg.setAttribute('width', '100%');
+                svg.setAttribute('height', '100%');
+
+                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                poly.setAttribute('points', cfg.points);
+                poly.setAttribute('fill', 'var(--bg-card)');
+                poly.setAttribute('stroke', cfg.stroke);
+                poly.setAttribute('stroke-width', '2');
+                svg.appendChild(poly);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', cfg.textX);
+                label.setAttribute('y', cfg.textY);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('class', 'slot-label');
+                label.textContent = cfg.label;
+                svg.appendChild(label);
+
+                // Content group for name/height/indicators
+                const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                content.setAttribute('class', 'slot-content');
+                svg.appendChild(content);
+
+                wrapper.appendChild(svg);
+
+                // Drag & drop on the wrapper div (HTML5 d&d works on divs)
+                wrapper.addEventListener('dragover', handleDragOver);
+                wrapper.addEventListener('drop', handleDrop);
+                wrapper.addEventListener('dragleave', handleDragLeave);
+                wrapper.addEventListener('click', () => showSmartSuggestions(cfg.id));
+
+                container.appendChild(wrapper);
+            });
+
+            // BAIX — SVG rectangles touching agulla outer edges
+            const baixConfigs = [
+                {
+                    id: 'baix-Rengla', col: 'Rengla', label: 'Baix R',
+                    cls: 'baix-rengla col-rengla',
+                    viewBox: '0 0 120 55',
+                    points: '0,0 120,0 120,55 0,55',
+                    stroke: 'var(--rengla)',
+                    textX: 60, textY: 35
+                },
+                {
+                    id: 'baix-Buida', col: 'Buida', label: 'Baix B',
+                    cls: 'baix-buida col-buida',
+                    viewBox: '0 0 108 132',
+                    points: '48,132 108,27 60,0 0,104',
+                    stroke: 'var(--buida)',
+                    textX: 54, textY: 66
+                },
+                {
+                    id: 'baix-Plena', col: 'Plena', label: 'Baix P',
+                    cls: 'baix-plena col-plena',
+                    viewBox: '0 0 108 132',
+                    points: '60,132 0,27 48,0 108,104',
+                    stroke: 'var(--plena)',
+                    textX: 54, textY: 66
+                }
+            ];
+            baixConfigs.forEach(cfg => {
+                const wrapper = document.createElement('div');
+                wrapper.className = `baix-wrapper ${cfg.cls}`;
+                wrapper.dataset.positionId = cfg.id;
+                wrapper.dataset.positionType = 'baix';
+                wrapper.dataset.readOnly = 'false';
+
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'baix-rect');
+                svg.setAttribute('viewBox', cfg.viewBox);
+                svg.setAttribute('width', '100%');
+                svg.setAttribute('height', '100%');
+
+                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                poly.setAttribute('points', cfg.points);
+                poly.setAttribute('fill', 'var(--bg-card)');
+                poly.setAttribute('stroke', cfg.stroke);
+                poly.setAttribute('stroke-width', '2');
+                svg.appendChild(poly);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', cfg.textX);
+                label.setAttribute('y', cfg.textY);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('class', 'slot-label');
+                label.textContent = cfg.label;
+                svg.appendChild(label);
+
+                const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                content.setAttribute('class', 'slot-content');
+                svg.appendChild(content);
+
+                wrapper.appendChild(svg);
+
+                wrapper.addEventListener('dragover', handleDragOver);
+                wrapper.addEventListener('drop', handleDrop);
+                wrapper.addEventListener('dragleave', handleDragLeave);
+                wrapper.addEventListener('click', () => showSmartSuggestions(cfg.id));
+
+                container.appendChild(wrapper);
+            });
+
+            // CONTRAFORT — SVG rectangles behind baix (further from agulla)
+            const contrafortConfigs = [
+                {
+                    id: 'contrafort-Rengla', col: 'Rengla', label: 'Ctfort R',
+                    cls: 'contrafort-rengla col-rengla',
+                    viewBox: '0 0 120 55',
+                    points: '0,0 120,0 120,55 0,55',
+                    stroke: 'var(--rengla)',
+                    textX: 60, textY: 35
+                },
+                {
+                    id: 'contrafort-Buida', col: 'Buida', label: 'Ctfort B',
+                    cls: 'contrafort-buida col-buida',
+                    viewBox: '0 0 108 133',
+                    points: '47,132 107,28 60,1 0,105',
+                    stroke: 'var(--buida)',
+                    textX: 54, textY: 67
+                },
+                {
+                    id: 'contrafort-Plena', col: 'Plena', label: 'Ctfort P',
+                    cls: 'contrafort-plena col-plena',
+                    viewBox: '0 0 108 133',
+                    points: '61,132 1,28 48,1 108,105',
+                    stroke: 'var(--plena)',
+                    textX: 54, textY: 67
+                }
+            ];
+            contrafortConfigs.forEach(cfg => {
+                const wrapper = document.createElement('div');
+                wrapper.className = `contrafort-wrapper ${cfg.cls}`;
+                wrapper.dataset.positionId = cfg.id;
+                wrapper.dataset.positionType = 'contrafort';
+                wrapper.dataset.readOnly = 'false';
+
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'contrafort-rect');
+                svg.setAttribute('viewBox', cfg.viewBox);
+                svg.setAttribute('width', '100%');
+                svg.setAttribute('height', '100%');
+
+                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                poly.setAttribute('points', cfg.points);
+                poly.setAttribute('fill', 'var(--bg-card)');
+                poly.setAttribute('stroke', cfg.stroke);
+                poly.setAttribute('stroke-width', '2');
+                svg.appendChild(poly);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', cfg.textX);
+                label.setAttribute('y', cfg.textY);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('class', 'slot-label');
+                label.textContent = cfg.label;
+                svg.appendChild(label);
+
+                const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                content.setAttribute('class', 'slot-content');
+                svg.appendChild(content);
+
+                wrapper.appendChild(svg);
+
+                wrapper.addEventListener('dragover', handleDragOver);
+                wrapper.addEventListener('drop', handleDrop);
+                wrapper.addEventListener('dragleave', handleDragLeave);
+                wrapper.addEventListener('click', () => showSmartSuggestions(cfg.id));
+
+                container.appendChild(wrapper);
+            });
+
+            // Mans queues are created dynamically by rebuildMansQueues() in updateAllSlots()
+
+            createQueueContainer(container, 'daus', 'R↔P', 'queue-daus-rp', 'col-rengla');
+            createQueueContainer(container, 'daus', 'P↔B', 'queue-daus-pb', 'col-plena');
+            createQueueContainer(container, 'daus', 'B↔R', 'queue-daus-br', 'col-buida');
+
+            createQueueContainer(container, 'laterals', 'Rengla-left', 'queue-laterals-rengla-left', 'col-rengla');
+            createQueueContainer(container, 'laterals', 'Rengla-right', 'queue-laterals-rengla-right', 'col-rengla');
+            createQueueContainer(container, 'laterals', 'Plena-left', 'queue-laterals-plena-left', 'col-plena');
+            createQueueContainer(container, 'laterals', 'Plena-right', 'queue-laterals-plena-right', 'col-plena');
+            createQueueContainer(container, 'laterals', 'Buida-left', 'queue-laterals-buida-left', 'col-buida');
+            createQueueContainer(container, 'laterals', 'Buida-right', 'queue-laterals-buida-right', 'col-buida');
+        }
+
+        function createSlot(config) {
+            const slot = document.createElement('div');
+            slot.className = `slot ${config.class}`;
+            slot.dataset.positionId = config.id;
+            slot.dataset.positionType = config.type;
+            slot.dataset.readOnly = config.readOnly || false;
+            
+            if (!config.readOnly) {
+                slot.addEventListener('dragover', handleDragOver);
+                slot.addEventListener('drop', handleDrop);
+                slot.addEventListener('dragleave', handleDragLeave);
+                slot.addEventListener('click', () => showSmartSuggestions(config.id));
+            }
+
+            const label = document.createElement('div');
+            label.className = 'slot-label';
+            label.textContent = config.label;
+            slot.appendChild(label);
+
+            return slot;
+        }
+
+        function createQueueContainer(parent, queueType, queueId, className, colClass) {
+            const container = document.createElement('div');
+            container.className = `queue-container ${className}`;
+            container.dataset.queueType = queueType;
+            container.dataset.queueId = queueId;
+
+            // Get max depth from config
+            const maxDepth = state.config.queues[queueType]?.max_depth || 4;
+
+            // Create initial slots based on existing assignments or default depth
+            const existing = state.assignments[queueType]?.[queueId] || [];
+            const depth = Math.max(existing.length, 1);
+
+            for (let i = 0; i < depth; i++) {
+                const slot = createQueueSlot(queueType, queueId, i, colClass);
+                container.appendChild(slot);
+            }
+
+            // Add button to add more depth
+            if (depth < maxDepth) {
+                const addBtn = document.createElement('button');
+                addBtn.className = 'queue-add-btn';
+                addBtn.textContent = '+';
+                addBtn.title = `Add depth ${depth + 1}`;
+                addBtn.onclick = () => addQueueDepth(queueType, queueId);
+                container.appendChild(addBtn);
+            }
+
+            parent.appendChild(container);
+        }
+
+        function createQueueSlot(queueType, queueId, depth, colClass) {
+            const slot = document.createElement('div');
+            slot.className = `slot queue-slot ${colClass}`;
+            const posId = `${queueType}-${queueId}-${depth}`;
+            slot.dataset.positionId = posId;
+            slot.dataset.positionType = queueType;
+            
+            slot.addEventListener('dragover', handleDragOver);
+            slot.addEventListener('drop', handleDrop);
+            slot.addEventListener('dragleave', handleDragLeave);
+            slot.addEventListener('click', () => showSmartSuggestions(posId));
+
+            const label = document.createElement('div');
+            label.className = 'slot-label';
+            label.textContent = `${depth + 1}`;
+            slot.appendChild(label);
+
+            return slot;
+        }
+
+        function addQueueDepth(queueType, queueId) {
+            const container = document.querySelector(`[data-queue-type="${queueType}"][data-queue-id="${queueId}"]`);
+            if (!container) return;
+
+            const slots = container.querySelectorAll('.queue-slot');
+            const newDepth = slots.length;
+            const maxDepth = state.config.queues[queueType]?.max_depth || 4;
+
+            if (newDepth >= maxDepth) {
+                showToast(`Maximum depth (${maxDepth}) reached for ${queueType}`);
+                return;
+            }
+
+            // Get column class
+            const colClass = slots[0]?.className.match(/col-\w+/)?.[0] || '';
+
+            // Create new slot
+            const newSlot = createQueueSlot(queueType, queueId, newDepth, colClass);
+
+            // Insert before add button
+            const addBtn = container.querySelector('.queue-add-btn');
+            container.insertBefore(newSlot, addBtn);
+
+            // Initialize assignment array if needed
+            if (!state.assignments[queueType][queueId]) {
+                state.assignments[queueType][queueId] = [];
+            }
+            state.assignments[queueType][queueId].push([null]);
+
+            // Hide add button if max depth reached
+            if (newDepth + 1 >= maxDepth) {
+                addBtn.style.display = 'none';
+            }
+
+            state.saveHistory(`Added depth ${newDepth + 1} to ${queueType} ${queueId}`);
+        }
+
+        // ============================================================
+        // MANS SVG QUEUE — dynamic creation & rebuild
+        // ============================================================
+
+        function createMansSlotSVG(col, depth) {
+            const geo = MANS_GEOMETRY[col];
+            const posId = `mans-${col}-${depth}`;
+            const colClass = col === 'Rengla' ? 'col-rengla' : col === 'Plena' ? 'col-plena' : 'col-buida';
+
+            const wrapper = document.createElement('div');
+            wrapper.className = `mans-wrapper ${colClass}`;
+            wrapper.dataset.positionId = posId;
+            wrapper.dataset.positionType = 'mans';
+            wrapper.dataset.mansCol = col;
+            wrapper.dataset.mansDepth = depth;
+            wrapper.dataset.readOnly = 'false';
+
+            // Position based on depth
+            const left = geo.baseLeft + depth * geo.dLeft;
+            const top  = geo.baseTop  + depth * geo.dTop;
+            wrapper.style.left   = `calc(50% + ${left}px)`;
+            wrapper.style.top    = `calc(45% + ${top}px)`;
+            wrapper.style.width  = `${geo.w}px`;
+            wrapper.style.height = `${geo.h}px`;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'mans-rect');
+            svg.setAttribute('viewBox', geo.viewBox);
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+
+            const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            poly.setAttribute('points', geo.points);
+            poly.setAttribute('fill', 'var(--bg-card)');
+            poly.setAttribute('stroke', geo.stroke);
+            poly.setAttribute('stroke-width', '2');
+            svg.appendChild(poly);
+
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', geo.textX);
+            label.setAttribute('y', geo.textY);
+            label.setAttribute('text-anchor', 'middle');
+            label.setAttribute('class', 'slot-label');
+            label.textContent = `Mans ${col[0]} ${depth + 1}`;
+            svg.appendChild(label);
+
+            const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            content.setAttribute('class', 'slot-content');
+            svg.appendChild(content);
+
+            wrapper.appendChild(svg);
+
+            wrapper.addEventListener('dragover', handleDragOver);
+            wrapper.addEventListener('drop', handleDrop);
+            wrapper.addEventListener('dragleave', handleDragLeave);
+            wrapper.addEventListener('click', () => showSmartSuggestions(posId));
+
+            return wrapper;
+        }
+
+        function rebuildMansQueues() {
+            const container = document.getElementById('canvasInner');
+
+            // Remove all existing mans wrappers
+            container.querySelectorAll('.mans-wrapper').forEach(el => el.remove());
+
+            ['Rengla', 'Plena', 'Buida'].forEach(col => {
+                const existing = state.assignments.mans?.[col] || [];
+                // One wrapper per existing depth + one empty drop-target
+                const totalSlots = existing.length + 1;
+
+                for (let i = 0; i < totalSlots; i++) {
+                    const wrapper = createMansSlotSVG(col, i);
+                    container.appendChild(wrapper);
+                    updateMansSlot(`mans-${col}-${i}`);
+                }
+            });
+        }
+
+        function updateAllSlots() {
+            document.querySelectorAll('.slot').forEach(slot => {
+                const posId = slot.dataset.positionId;
+                updateSlot(posId);
+            });
+            // SVG agulla triangles (via their wrapper divs)
+            document.querySelectorAll('.agulla-wrapper').forEach(wrapper => {
+                updateAgullaSlot(wrapper.dataset.positionId);
+            });
+            // SVG baix rectangles (via their wrapper divs)
+            document.querySelectorAll('.baix-wrapper').forEach(wrapper => {
+                updateBaixSlot(wrapper.dataset.positionId);
+            });
+            // SVG contrafort rectangles (via their wrapper divs)
+            document.querySelectorAll('.contrafort-wrapper').forEach(wrapper => {
+                updateContrafortSlot(wrapper.dataset.positionId);
+            });
+            // Dynamic mans SVG queue (rebuild to match current assignments)
+            rebuildMansQueues();
+        }
+
+        function updateSlot(positionId) {
+            const slot = document.querySelector(`[data-position-id="${positionId}"]`);
+            if (!slot) return;
+
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+
+            // Clear existing content except label
+            const label = slot.querySelector('.slot-label');
+            slot.innerHTML = '';
+            if (label) slot.appendChild(label);
+
+            if (casteller) {
+                slot.classList.add('filled');
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'slot-name';
+                nameDiv.textContent = casteller.name;
+                slot.appendChild(nameDiv);
+
+                const heightDiv = document.createElement('div');
+                heightDiv.className = 'slot-height';
+                heightDiv.textContent = `${casteller.height} cm`;
+                slot.appendChild(heightDiv);
+
+                // Add indicators
+                const indicators = document.createElement('div');
+                indicators.className = 'slot-indicators';
+
+                // Height indicator
+                const heightIndicator = getHeightIndicator(positionId, casteller);
+                if (heightIndicator) {
+                    indicators.appendChild(heightIndicator);
+                }
+
+                // Expertise indicator
+                const expertiseIndicator = getExpertiseIndicator(positionId, casteller);
+                indicators.appendChild(expertiseIndicator);
+
+                slot.appendChild(indicators);
+
+                // Make draggable
+                if (!slot.dataset.readOnly || slot.dataset.readOnly === 'false') {
+                    slot.draggable = true;
+                    slot.addEventListener('dragstart', handleDragStart);
+                    slot.addEventListener('dragend', handleDragEnd);
+                }
+            } else {
+                slot.classList.remove('filled');
+                slot.draggable = false;
+            }
+        }
+
+        function updateAgullaSlot(positionId) {
+            const wrapper = document.querySelector(`.agulla-wrapper[data-position-id="${positionId}"]`);
+            if (!wrapper) return;
+
+            const svg = wrapper.querySelector('.agulla-triangle');
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+            const content = svg.querySelector('.slot-content');
+            const label = svg.querySelector('.slot-label');
+
+            // Clear content group
+            content.innerHTML = '';
+
+            // Get text anchor position from label
+            const tx = parseFloat(label.getAttribute('x'));
+            const ty = parseFloat(label.getAttribute('y'));
+
+            if (casteller) {
+                wrapper.classList.add('filled');
+
+                // Hide label when filled
+                label.setAttribute('opacity', '0.3');
+
+                const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                nameEl.setAttribute('x', tx);
+                nameEl.setAttribute('y', ty - 12);
+                nameEl.setAttribute('text-anchor', 'middle');
+                nameEl.setAttribute('class', 'slot-name');
+                nameEl.textContent = casteller.name;
+                content.appendChild(nameEl);
+
+                const heightEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                heightEl.setAttribute('x', tx);
+                heightEl.setAttribute('y', ty + 2);
+                heightEl.setAttribute('text-anchor', 'middle');
+                heightEl.setAttribute('class', 'slot-height');
+                heightEl.textContent = `${casteller.height} cm`;
+                content.appendChild(heightEl);
+
+                // Indicators
+                const hInd = getHeightIndicator(positionId, casteller);
+                const eInd = getExpertiseIndicator(positionId, casteller);
+                let indX = tx - 10;
+                [hInd, eInd].forEach(ind => {
+                    if (!ind) return;
+                    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    t.setAttribute('x', indX);
+                    t.setAttribute('y', ty + 14);
+                    t.setAttribute('text-anchor', 'middle');
+                    t.setAttribute('class', 'indicator-text');
+                    t.textContent = ind.textContent;
+                    t.setAttribute('fill', window.getComputedStyle(ind).color || 'white');
+                    t.setAttribute('title', ind.title);
+                    content.appendChild(t);
+                    indX += 20;
+                });
+
+                // Make the wrapper div draggable (HTML5 drag works on divs)
+                wrapper.draggable = true;
+                wrapper.ondragstart = handleDragStart;
+                wrapper.ondragend = handleDragEnd;
+            } else {
+                wrapper.classList.remove('filled');
+                wrapper.draggable = false;
+                wrapper.ondragstart = null;
+                wrapper.ondragend = null;
+                label.setAttribute('opacity', '1');
+            }
+        }
+
+        function updateBaixSlot(positionId) {
+            const wrapper = document.querySelector(`.baix-wrapper[data-position-id="${positionId}"]`);
+            if (!wrapper) return;
+
+            const svg = wrapper.querySelector('.baix-rect');
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+            const content = svg.querySelector('.slot-content');
+            const label = svg.querySelector('.slot-label');
+
+            // Clear content group
+            content.innerHTML = '';
+
+            // Get text anchor position from label
+            const tx = parseFloat(label.getAttribute('x'));
+            const ty = parseFloat(label.getAttribute('y'));
+
+            if (casteller) {
+                wrapper.classList.add('filled');
+
+                label.setAttribute('opacity', '0.3');
+
+                const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                nameEl.setAttribute('x', tx);
+                nameEl.setAttribute('y', ty - 12);
+                nameEl.setAttribute('text-anchor', 'middle');
+                nameEl.setAttribute('class', 'slot-name');
+                nameEl.textContent = casteller.name;
+                content.appendChild(nameEl);
+
+                const heightEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                heightEl.setAttribute('x', tx);
+                heightEl.setAttribute('y', ty + 2);
+                heightEl.setAttribute('text-anchor', 'middle');
+                heightEl.setAttribute('class', 'slot-height');
+                heightEl.textContent = `${casteller.height} cm`;
+                content.appendChild(heightEl);
+
+                // Indicators (expertise only — no height ratio for baix)
+                const eInd = getExpertiseIndicator(positionId, casteller);
+                if (eInd) {
+                    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    t.setAttribute('x', tx);
+                    t.setAttribute('y', ty + 14);
+                    t.setAttribute('text-anchor', 'middle');
+                    t.setAttribute('class', 'indicator-text');
+                    t.textContent = eInd.textContent;
+                    t.setAttribute('fill', window.getComputedStyle(eInd).color || 'white');
+                    t.setAttribute('title', eInd.title);
+                    content.appendChild(t);
+                }
+
+                wrapper.draggable = true;
+                wrapper.ondragstart = handleDragStart;
+                wrapper.ondragend = handleDragEnd;
+            } else {
+                wrapper.classList.remove('filled');
+                wrapper.draggable = false;
+                wrapper.ondragstart = null;
+                wrapper.ondragend = null;
+                label.setAttribute('opacity', '1');
+            }
+        }
+
+        function updateMansSlot(positionId) {
+            const wrapper = document.querySelector(`.mans-wrapper[data-position-id="${positionId}"]`);
+            if (!wrapper) return;
+
+            const svg = wrapper.querySelector('.mans-rect');
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+            const content = svg.querySelector('.slot-content');
+            const label = svg.querySelector('.slot-label');
+
+            // Clear content group
+            content.innerHTML = '';
+
+            // Get text anchor position from label
+            const tx = parseFloat(label.getAttribute('x'));
+            const ty = parseFloat(label.getAttribute('y'));
+
+            if (casteller) {
+                wrapper.classList.add('filled');
+
+                label.setAttribute('opacity', '0.3');
+
+                const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                nameEl.setAttribute('x', tx);
+                nameEl.setAttribute('y', ty - 12);
+                nameEl.setAttribute('text-anchor', 'middle');
+                nameEl.setAttribute('class', 'slot-name');
+                nameEl.textContent = casteller.name;
+                content.appendChild(nameEl);
+
+                const heightEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                heightEl.setAttribute('x', tx);
+                heightEl.setAttribute('y', ty + 2);
+                heightEl.setAttribute('text-anchor', 'middle');
+                heightEl.setAttribute('class', 'slot-height');
+                heightEl.textContent = `${casteller.height} cm`;
+                content.appendChild(heightEl);
+
+                // Indicators (height + expertise)
+                const hInd = getHeightIndicator(positionId, casteller);
+                const eInd = getExpertiseIndicator(positionId, casteller);
+                let indX = tx - 10;
+                [hInd, eInd].forEach(ind => {
+                    if (!ind) return;
+                    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    t.setAttribute('x', indX);
+                    t.setAttribute('y', ty + 14);
+                    t.setAttribute('text-anchor', 'middle');
+                    t.setAttribute('class', 'indicator-text');
+                    t.textContent = ind.textContent;
+                    t.setAttribute('fill', window.getComputedStyle(ind).color || 'white');
+                    t.setAttribute('title', ind.title);
+                    content.appendChild(t);
+                    indX += 20;
+                });
+
+                wrapper.draggable = true;
+                wrapper.ondragstart = handleDragStart;
+                wrapper.ondragend = handleDragEnd;
+            } else {
+                wrapper.classList.remove('filled');
+                wrapper.draggable = false;
+                wrapper.ondragstart = null;
+                wrapper.ondragend = null;
+                label.setAttribute('opacity', '1');
+            }
+        }
+
+        function updateContrafortSlot(positionId) {
+            const wrapper = document.querySelector(`.contrafort-wrapper[data-position-id="${positionId}"]`);
+            if (!wrapper) return;
+
+            const svg = wrapper.querySelector('.contrafort-rect');
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+            const content = svg.querySelector('.slot-content');
+            const label = svg.querySelector('.slot-label');
+
+            // Clear content group
+            content.innerHTML = '';
+
+            // Get text anchor position from label
+            const tx = parseFloat(label.getAttribute('x'));
+            const ty = parseFloat(label.getAttribute('y'));
+
+            if (casteller) {
+                wrapper.classList.add('filled');
+
+                label.setAttribute('opacity', '0.3');
+
+                const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                nameEl.setAttribute('x', tx);
+                nameEl.setAttribute('y', ty - 12);
+                nameEl.setAttribute('text-anchor', 'middle');
+                nameEl.setAttribute('class', 'slot-name');
+                nameEl.textContent = casteller.name;
+                content.appendChild(nameEl);
+
+                const heightEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                heightEl.setAttribute('x', tx);
+                heightEl.setAttribute('y', ty + 2);
+                heightEl.setAttribute('text-anchor', 'middle');
+                heightEl.setAttribute('class', 'slot-height');
+                heightEl.textContent = `${casteller.height} cm`;
+                content.appendChild(heightEl);
+
+                // Indicators (height + expertise)
+                const hInd = getHeightIndicator(positionId, casteller);
+                const eInd = getExpertiseIndicator(positionId, casteller);
+                let indX = tx - 10;
+                [hInd, eInd].forEach(ind => {
+                    if (!ind) return;
+                    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    t.setAttribute('x', indX);
+                    t.setAttribute('y', ty + 14);
+                    t.setAttribute('text-anchor', 'middle');
+                    t.setAttribute('class', 'indicator-text');
+                    t.textContent = ind.textContent;
+                    t.setAttribute('fill', window.getComputedStyle(ind).color || 'white');
+                    t.setAttribute('title', ind.title);
+                    content.appendChild(t);
+                    indX += 20;
+                });
+
+                wrapper.draggable = true;
+                wrapper.ondragstart = handleDragStart;
+                wrapper.ondragend = handleDragEnd;
+            } else {
+                wrapper.classList.remove('filled');
+                wrapper.draggable = false;
+                wrapper.ondragstart = null;
+                wrapper.ondragend = null;
+                label.setAttribute('opacity', '1');
+            }
+        }
+
+        function getHeightIndicator(positionId, casteller) {
+            const [posType, col, idx] = state.parsePositionId(positionId);
+            
+            if (posType === 'baix') return null; // No height requirement for baix
+
+            const ratio = calculateHeightRatio(positionId, casteller);
+            if (ratio === null) return null;
+
+            const { min, max } = getHeightRatioRange(posType, idx);
+            if (min === null || max === null) return null;
+
+            const indicator = document.createElement('div');
+            indicator.className = 'indicator';
+            indicator.textContent = '●';
+            indicator.title = `Height ratio: ${(ratio * 100).toFixed(1)}% (target: ${(min * 100).toFixed(0)}–${(max * 100).toFixed(0)}%)`;
+
+            if (ratio >= min && ratio <= max) {
+                indicator.classList.add('height-good');
+            } else if (ratio >= min * 0.95 && ratio <= max * 1.05) {
+                indicator.classList.add('height-ok');
+            } else {
+                indicator.classList.add('height-bad');
+            }
+
+            return indicator;
+        }
+
+        function getExpertiseIndicator(positionId, casteller) {
+            const [posType] = state.parsePositionId(positionId);
+            
+            const keywords = getPositionKeywords(posType);
+            const pos1 = (casteller.position_1 || '').toLowerCase();
+            const pos2 = (casteller.position_2 || '').toLowerCase();
+
+            const indicator = document.createElement('div');
+            indicator.className = 'indicator';
+
+            let hasPrimary = false;
+            let hasSecondary = false;
+
+            keywords.forEach(kw => {
+                if (pos1.includes(kw.toLowerCase())) hasPrimary = true;
+                if (pos2.includes(kw.toLowerCase())) hasSecondary = true;
+            });
+
+            if (hasPrimary) {
+                indicator.classList.add('expertise-primary');
+                indicator.textContent = '⭐';
+                indicator.title = `Primary expertise: ${casteller.position_1}`;
+            } else if (hasSecondary) {
+                indicator.classList.add('expertise-secondary');
+                indicator.textContent = '☆';
+                indicator.title = `Secondary expertise: ${casteller.position_2}`;
+            } else {
+                indicator.classList.add('expertise-none');
+                indicator.textContent = '○';
+                indicator.title = 'No matching expertise';
+            }
+
+            return indicator;
+        }
+
+        function calculateHeightRatio(positionId, casteller) {
+            const [posType, col, idx] = state.parsePositionId(positionId);
+            const refHeight = getReferenceHeight(positionId);
+            
+            if (refHeight === null || refHeight === 0) return null;
+            return casteller.height / refHeight;
+        }
+
+        function getReferenceHeight(positionId) {
+            const [posType, col, idx] = state.parsePositionId(positionId);
+
+            if (posType === 'crossa' || posType === 'contrafort') {
+                // Reference: baix of same column
+                const baixName = state.getSlotContent(`baix-${col}`);
+                const baix = baixName ? state.getCasteller(baixName) : null;
+                return baix ? baix.height : null;
+            }
+
+            if (posType === 'agulla') {
+                // Reference: baix + segon of same column
+                const baixName = state.getSlotContent(`baix-${col}`);
+                const segonName = state.getSlotContent(`segon-${col}`);
+                const baix = baixName ? state.getCasteller(baixName) : null;
+                const segon = segonName ? state.getCasteller(segonName) : null;
+                if (!baix || !segon) return null;
+                return baix.height + segon.height;
+            }
+
+            if (posType === 'mans' || posType === 'laterals') {
+                if (idx === 0) {
+                    // Depth 1: Reference baix + segon of column
+                    const baixName = state.getSlotContent(`baix-${col}`);
+                    const segonName = state.getSlotContent(`segon-${col}`);
+                    const baix = baixName ? state.getCasteller(baixName) : null;
+                    const segon = segonName ? state.getCasteller(segonName) : null;
+                    if (!baix || !segon) return null;
+                    return baix.height + segon.height;
+                } else {
+                    // Depth N: Reference previous depth in same queue
+                    const prevName = state.getSlotContent(`${posType}-${col}-${idx - 1}`);
+                    const prev = prevName ? state.getCasteller(prevName) : null;
+                    return prev ? prev.height : null;
+                }
+            }
+
+            if (posType === 'daus') {
+                if (idx === 0) {
+                    // Depth 1: Average of both columns' baix + segon
+                    const cols = col.split('↔');
+                    const heights = [];
+                    for (const c of cols) {
+                        const normalCol = c === 'R' ? 'Rengla' : c === 'P' ? 'Plena' : 'Buida';
+                        const baixName = state.getSlotContent(`baix-${normalCol}`);
+                        const segonName = state.getSlotContent(`segon-${normalCol}`);
+                        const baix = baixName ? state.getCasteller(baixName) : null;
+                        const segon = segonName ? state.getCasteller(segonName) : null;
+                        if (baix && segon) heights.push(baix.height + segon.height);
+                    }
+                    if (heights.length === 0) return null;
+                    return heights.reduce((a, b) => a + b) / heights.length;
+                } else {
+                    // Depth N: Reference previous depth
+                    const prevName = state.getSlotContent(`${posType}-${col}-${idx - 1}`);
+                    const prev = prevName ? state.getCasteller(prevName) : null;
+                    return prev ? prev.height : null;
+                }
+            }
+
+            return null;
+        }
+
+        function getHeightRatioRange(posType, depth) {
+            if (posType === 'crossa') {
+                const c = state.config.positions.crossa;
+                return { min: c.height_ratio_min, max: c.height_ratio_max };
+            }
+            if (posType === 'contrafort') {
+                const c = state.config.positions.contrafort;
+                return { min: c.height_ratio_min, max: c.height_ratio_max };
+            }
+            if (posType === 'agulla') {
+                const c = state.config.positions.agulla;
+                return { min: c.height_ratio_min, max: c.height_ratio_max };
+            }
+            if (['mans', 'daus', 'laterals'].includes(posType)) {
+                const qConfig = state.config.queues[posType];
+                if (depth === 0) {
+                    return {
+                        min: qConfig.height_ratio_min,
+                        max: qConfig.height_ratio_max
+                    };
+                } else {
+                    return {
+                        min: qConfig.queue_height_ratio_min,
+                        max: qConfig.queue_height_ratio_max
+                    };
+                }
+            }
+            return { min: null, max: null };
+        }
+
+        function getPositionKeywords(posType) {
+            const keywords = {
+                baix: ['Baix'],
+                crossa: ['Crossa'],
+                contrafort: ['Contrafort'],
+                agulla: ['Agulla'],
+                mans: ['Primeres'],
+                daus: ['Dau/Vent', 'Dau', 'Vent'],
+                laterals: ['Lateral']
+            };
+            return keywords[posType] || [];
+        }
+
+        // ============================================================================
+        // POOL RENDERING
+        // ============================================================================
+
+        function updatePool() {
+            const poolList = document.getElementById('poolList');
+            const search = document.getElementById('poolSearch').value.toLowerCase();
+            const sortBy = document.getElementById('poolSort').value;
+
+            let unassigned = state.getUnassigned();
+
+            // Filter
+            if (search) {
+                unassigned = unassigned.filter(c =>
+                    c.name.toLowerCase().includes(search) ||
+                    (c.position_1 || '').toLowerCase().includes(search) ||
+                    (c.position_2 || '').toLowerCase().includes(search)
+                );
+            }
+
+            // Sort
+            unassigned.sort((a, b) => {
+                if (sortBy === 'name') return a.name.localeCompare(b.name);
+                if (sortBy === 'height') return b.height - a.height;
+                if (sortBy === 'position') return (a.position_1 || '').localeCompare(b.position_1 || '');
+                return 0;
+            });
+
+            poolList.innerHTML = '';
+            unassigned.forEach(casteller => {
+                const card = createCastellerCard(casteller);
+                poolList.appendChild(card);
+            });
+
+            // Update count
+            const poolCount = document.getElementById('poolCount');
+            poolCount.textContent = `${unassigned.length} / ${state.castellers.length}`;
+        }
+
+        function createCastellerCard(casteller) {
+            const card = document.createElement('div');
+            card.className = 'casteller-card';
+            card.draggable = true;
+            card.dataset.name = casteller.name;
+
+            card.addEventListener('dragstart', (e) => {
+                state.draggedCasteller = casteller.name;
+                state.draggedElement = card;
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', casteller.name);
+            });
+
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+                state.draggedCasteller = null;
+                state.draggedElement = null;
+            });
+
+            const name = document.createElement('div');
+            name.className = 'casteller-name';
+            name.textContent = casteller.name;
+            card.appendChild(name);
+
+            const info = document.createElement('div');
+            info.className = 'casteller-info';
+            info.innerHTML = `
+                <span>${casteller.height} cm</span>
+                <span>${casteller.position_1 || '—'}</span>
+            `;
+            card.appendChild(info);
+
+            const actions = document.createElement('div');
+            actions.className = 'casteller-actions';
+            
+            const editBtn = document.createElement('button');
+            editBtn.className = 'icon-btn';
+            editBtn.textContent = '✎ Edit';
+            editBtn.onclick = () => editCasteller(casteller.name);
+            actions.appendChild(editBtn);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'icon-btn';
+            removeBtn.textContent = '× Remove';
+            removeBtn.onclick = () => removeCasteller(casteller.name);
+            actions.appendChild(removeBtn);
+
+            card.appendChild(actions);
+
+            return card;
+        }
+
+        // ============================================================================
+        // DRAG AND DROP
+        // ============================================================================
+
+        function handleDragStart(e) {
+            const slot = e.currentTarget;
+            const posId = slot.dataset.positionId;
+            const name = state.getSlotContent(posId);
+
+            if (!name) return;
+
+            state.draggedCasteller = name;
+            state.draggedElement = slot;
+            state.dragSourcePosId = posId;
+            slot.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', name);
+        }
+
+        function handleDragEnd(e) {
+            e.currentTarget.style.opacity = '1';
+            state.draggedCasteller = null;
+            state.draggedElement = null;
+            state.dragSourcePosId = null;
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            const slot = e.currentTarget;
+
+            if (slot.dataset.readOnly === 'true') {
+                slot.classList.add('drag-invalid');
+                return;
+            }
+
+            slot.classList.add('dragging-over');
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('dragging-over', 'drag-invalid');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            const slot = e.currentTarget;
+            slot.classList.remove('dragging-over', 'drag-invalid');
+
+            if (slot.dataset.readOnly === 'true') {
+                showToast('Tronc positions are read-only');
+                return;
+            }
+
+            const name = state.draggedCasteller;
+            if (!name) return;
+
+            const targetPosId = slot.dataset.positionId;
+            const [posType, col, idx] = state.parsePositionId(targetPosId);
+
+            // Mans queue: stack insert-between behavior
+            if (posType === 'mans' && idx !== undefined) {
+                const existingName = state.getSlotContent(targetPosId);
+
+                // Remove from previous position first
+                state.removeFromAssignments(name);
+
+                // Ensure the queue array exists
+                if (!state.assignments.mans[col]) {
+                    state.assignments.mans[col] = [];
+                }
+
+                if (existingName) {
+                    // Dropping onto a filled slot → insert before it (shift others back)
+                    state.assignments.mans[col].splice(idx, 0, [name]);
+                } else {
+                    // Dropping onto the empty tail slot → append
+                    while (state.assignments.mans[col].length < idx) {
+                        state.assignments.mans[col].push([null]);
+                    }
+                    if (state.assignments.mans[col].length <= idx) {
+                        state.assignments.mans[col].push([name]);
+                    } else {
+                        state.assignments.mans[col][idx] = [name];
+                    }
+                }
+            } else {
+                // Default behavior for non-mans positions
+                state.assignToSlot(targetPosId, name);
+            }
+
+            // Update UI
+            updateAllSlots();
+            updatePool();
+            updateStatusBar();
+            
+            state.saveHistory(`Moved ${name} to ${targetPosId}`);
+        }
+
+        // ============================================================================
+        // AUTO-COMPLETE ALGORITHM
+        // ============================================================================
+
+        function autoComplete() {
+            let assigned = 0;
+            const unassigned = state.getUnassigned();
+
+            if (unassigned.length === 0) {
+                showToast('All castellers are already assigned');
+                return;
+            }
+
+            // Get all empty slots in priority order
+            const emptySlots = getEmptySlotsByPriority();
+
+            for (const slotId of emptySlots) {
+                const [posType] = state.parsePositionId(slotId);
+                
+                // Get available candidates
+                const available = state.getUnassigned();
+                if (available.length === 0) break;
+
+                // Score each candidate
+                const scored = available.map(c => ({
+                    casteller: c,
+                    score: scoreCasteller(slotId, c)
+                }));
+
+                // Sort by score (highest first)
+                scored.sort((a, b) => b.score - a.score);
+
+                // Assign the best one
+                if (scored.length > 0 && scored[0].score > 0) {
+                    state.assignToSlot(slotId, scored[0].casteller.name);
+                    assigned++;
+                }
+            }
+
+            // Update UI
+            updateAllSlots();
+            updatePool();
+            updateStatusBar();
+
+            state.saveHistory(`Auto-completed ${assigned} positions`);
+            showToast(`Auto-assigned ${assigned} castellers. ${state.getUnassigned().length} remain unassigned.`);
+        }
+
+        function getEmptySlotsByPriority() {
+            const slots = [];
+
+            // Priority order: baix → crossa → contrafort → agulla → mans → daus → laterals
+            const positions = [
+                'baix-Rengla', 'baix-Plena', 'baix-Buida',
+                'crossa-Rengla-0', 'crossa-Rengla-1', 'crossa-Plena-0', 'crossa-Plena-1', 'crossa-Buida-0', 'crossa-Buida-1',
+                'contrafort-Rengla', 'contrafort-Plena', 'contrafort-Buida',
+                'agulla-Rengla', 'agulla-Plena', 'agulla-Buida'
+            ];
+
+            for (const posId of positions) {
+                if (!state.getSlotContent(posId)) {
+                    slots.push(posId);
+                }
+            }
+
+            // Queues - breadth first
+            const queueTypes = ['mans', 'daus', 'laterals'];
+            for (const qType of queueTypes) {
+                const maxDepth = state.config.queues[qType]?.max_depth || 4;
+                for (let d = 0; d < maxDepth; d++) {
+                    const queues = Object.keys(state.assignments[qType] || {});
+                    for (const qId of queues) {
+                        const posId = `${qType}-${qId}-${d}`;
+                        if (!state.getSlotContent(posId)) {
+                            slots.push(posId);
+                        }
+                    }
+                }
+            }
+
+            return slots;
+        }
+
+        function scoreCasteller(slotId, casteller) {
+            const [posType, col, idx] = state.parsePositionId(slotId);
+            
+            let score = 0;
+
+            // Expertise score (0-1.0)
+            const keywords = getPositionKeywords(posType);
+            const pos1 = (casteller.position_1 || '').toLowerCase();
+            const pos2 = (casteller.position_2 || '').toLowerCase();
+
+            let expertiseScore = 0.1; // baseline
+            keywords.forEach(kw => {
+                if (pos1.includes(kw.toLowerCase())) expertiseScore = 1.0;
+                else if (pos2.includes(kw.toLowerCase())) expertiseScore = Math.max(expertiseScore, 0.5);
+            });
+
+            // Height score (0-1.0)
+            let heightScore = 0.5;
+            const refHeight = getReferenceHeight(slotId);
+            if (refHeight) {
+                const ratio = casteller.height / refHeight;
+                const { min, max } = getHeightRatioRange(posType, idx || 0);
+                if (min && max) {
+                    if (ratio >= min && ratio <= max) {
+                        heightScore = 1.0;
+                    } else {
+                        const distance = ratio < min ? min - ratio : ratio - max;
+                        heightScore = Math.max(0, 1.0 - distance * 2);
+                    }
+                }
+            }
+
+            // Get weights from config
+            const config = ['mans', 'daus', 'laterals'].includes(posType)
+                ? state.config.queues[posType]
+                : state.config.positions[posType];
+
+            if (config) {
+                score = (config.expertise_weight || 0.5) * expertiseScore +
+                        (config.height_weight || 0.5) * heightScore;
+            } else {
+                score = 0.5 * expertiseScore + 0.5 * heightScore;
+            }
+
+            return score;
+        }
+
+        // ============================================================================
+        // SMART SUGGESTIONS
+        // ============================================================================
+
+        function showSmartSuggestions(positionId) {
+            const available = state.getUnassigned();
+            if (available.length === 0) return;
+
+            // Score all available castellers
+            const scored = available.map(c => ({
+                casteller: c,
+                score: scoreCasteller(positionId, c)
+            }));
+
+            // Sort and take top 5
+            scored.sort((a, b) => b.score - a.score);
+            const top5 = scored.slice(0, 5);
+
+            // Show a simple menu (in real implementation, this would be a proper dropdown)
+            const message = top5.map((s, i) => 
+                `${i + 1}. ${s.casteller.name} (${s.casteller.height}cm) - Score: ${s.score.toFixed(2)}`
+            ).join('\n');
+
+            const choice = prompt(`Suggestions for ${positionId}:\n\n${message}\n\nEnter number (1-5) or cancel:`);
+            
+            if (choice && !isNaN(choice)) {
+                const idx = parseInt(choice) - 1;
+                if (idx >= 0 && idx < top5.length) {
+                    state.assignToSlot(positionId, top5[idx].casteller.name);
+                    updateAllSlots();
+                    updatePool();
+                    updateStatusBar();
+                    state.saveHistory(`Assigned ${top5[idx].casteller.name} to ${positionId}`);
+                }
+            }
+        }
+
+        // ============================================================================
+        // CASTELLER CRUD
+        // ============================================================================
+
+        let editingCasteller = null;
+
+        function openCastellerModal(casteller = null) {
+            editingCasteller = casteller;
+            const modal = document.getElementById('castellerModal');
+            const title = document.getElementById('modalTitle');
+            const form = document.getElementById('castellerForm');
+
+            title.textContent = casteller ? 'Edit Casteller' : 'Add Casteller';
+
+            if (casteller) {
+                document.getElementById('formName').value = casteller.name;
+                document.getElementById('formHeight').value = casteller.height;
+                document.getElementById('formPosition1').value = casteller.position_1 || '';
+                document.getElementById('formPosition2').value = casteller.position_2 || '';
+                document.getElementById('formWeight').value = casteller.weight || '';
+            } else {
+                form.reset();
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('castellerModal').classList.remove('active');
+            editingCasteller = null;
+        }
+
+        function saveCasteller(e) {
+            e.preventDefault();
+
+            const newCasteller = {
+                name: document.getElementById('formName').value.trim(),
+                height: parseFloat(document.getElementById('formHeight').value),
+                position_1: document.getElementById('formPosition1').value,
+                position_2: document.getElementById('formPosition2').value,
+                weight: document.getElementById('formWeight').value ? parseFloat(document.getElementById('formWeight').value) : null
+            };
+
+            try {
+                if (editingCasteller) {
+                    state.updateCasteller(editingCasteller.name, newCasteller);
+                } else {
+                    state.addCasteller(newCasteller);
+                }
+                closeModal();
+                updateAllSlots();
+                updatePool();
+                updateStatusBar();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function editCasteller(name) {
+            const casteller = state.getCasteller(name);
+            if (casteller) {
+                openCastellerModal(casteller);
+            }
+        }
+
+        function removeCasteller(name) {
+            if (confirm(`Remove ${name} from the cast? This cannot be undone.`)) {
+                state.removeCasteller(name);
+                updateAllSlots();
+                updatePool();
+                updateStatusBar();
+            }
+        }
+
+        // ============================================================================
+        // STATUS BAR
+        // ============================================================================
+
+        function updateStatusBar() {
+            const statusBar = document.getElementById('statusBar');
+            const checks = [];
+
+            // Check agulles filled
+            const agulles = ['agulla-Rengla', 'agulla-Plena', 'agulla-Buida'];
+            const agullesFilled = agulles.every(id => state.getSlotContent(id));
+            checks.push({
+                label: 'All agulles filled',
+                valid: agullesFilled,
+                critical: true
+            });
+
+            // Check baix filled
+            const baixs = ['baix-Rengla', 'baix-Plena', 'baix-Buida'];
+            const baixsFilled = baixs.every(id => state.getSlotContent(id));
+            checks.push({
+                label: 'Baix in all columns',
+                valid: baixsFilled,
+                critical: true
+            });
+
+            // Check mans depth 1
+            const mansQueues = ['Rengla', 'Plena', 'Buida'];
+            const mansD1Filled = mansQueues.every(q => state.getSlotContent(`mans-${q}-0`));
+            checks.push({
+                label: 'Mans depth 1 in all queues',
+                valid: mansD1Filled,
+                critical: true
+            });
+
+            // Calculate height compliance
+            let totalSlots = 0;
+            let compliantSlots = 0;
+            document.querySelectorAll('.slot.filled:not(.tronc)').forEach(slot => {
+                const posId = slot.dataset.positionId;
+                const name = state.getSlotContent(posId);
+                if (!name) return;
+                
+                const casteller = state.getCasteller(name);
+                if (!casteller) return;
+
+                totalSlots++;
+                const ratio = calculateHeightRatio(posId, casteller);
+                if (ratio !== null) {
+                    const [posType,,idx] = state.parsePositionId(posId);
+                    const { min, max } = getHeightRatioRange(posType, idx || 0);
+                    if (min && max && ratio >= min && ratio <= max) {
+                        compliantSlots++;
+                    }
+                }
+            });
+
+            const heightCompliance = totalSlots > 0 ? (compliantSlots / totalSlots * 100).toFixed(0) : 0;
+            checks.push({
+                label: `Height compliance: ${heightCompliance}%`,
+                valid: heightCompliance >= 70,
+                critical: false
+            });
+
+            // Render status items
+            statusBar.innerHTML = checks.map(check => {
+                const className = check.critical 
+                    ? (check.valid ? 'valid' : 'invalid')
+                    : (check.valid ? 'valid' : 'warning');
+                const icon = check.valid ? '✅' : (check.critical ? '❌' : '⚠️');
+                return `<div class="status-item ${className}">${icon} ${check.label}</div>`;
+            }).join('');
+        }
+
+        // ============================================================================
+        // SETTINGS PANEL
+        // ============================================================================
+
+        function initSettings() {
+            const container = document.getElementById('settingsContent');
+            
+            // Global settings
+            container.innerHTML = `
+                <div class="settings-section expanded">
+                    <h3>Global</h3>
+                    <div class="settings-content">
+                        <div class="setting-row">
+                            <label>Optimization Method</label>
+                            <select id="optMethod">
+                                <option value="greedy">Greedy</option>
+                                <option value="exhaustive">Exhaustive</option>
+                                <option value="simulated_annealing">Simulated Annealing</option>
+                                <option value="adaptive_simulated_annealing">Adaptive Simulated Annealing</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <label>
+                                <input type="checkbox" id="useWeight"> Use Weight Data
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Position settings
+            const positions = ['baix', 'crossa', 'contrafort', 'agulla'];
+            positions.forEach(pos => {
+                const section = createPositionSettings(pos);
+                container.appendChild(section);
+            });
+
+            // Queue settings
+            const queues = ['mans', 'daus', 'laterals'];
+            queues.forEach(q => {
+                const section = createQueueSettings(q);
+                container.appendChild(section);
+            });
+
+            // Add toggle functionality
+            container.querySelectorAll('.settings-section h3').forEach(h3 => {
+                h3.addEventListener('click', () => {
+                    h3.parentElement.classList.toggle('expanded');
+                });
+            });
+
+            // Load current values
+            loadSettings();
+        }
+
+        function createPositionSettings(posName) {
+            const config = state.config.positions[posName];
+            const section = document.createElement('div');
+            section.className = 'settings-section';
+            section.innerHTML = `
+                <h3>${posName.charAt(0).toUpperCase() + posName.slice(1)}</h3>
+                <div class="settings-content">
+                    <div class="setting-row">
+                        <label>Height Ratio Min</label>
+                        <input type="number" step="0.01" data-config="positions.${posName}.height_ratio_min" value="${config.height_ratio_min}">
+                    </div>
+                    <div class="setting-row">
+                        <label>Height Ratio Max</label>
+                        <input type="number" step="0.01" data-config="positions.${posName}.height_ratio_max" value="${config.height_ratio_max}">
+                    </div>
+                    <div class="setting-row">
+                        <label>Height Weight</label>
+                        <input type="range" min="0" max="1" step="0.1" data-config="positions.${posName}.height_weight" value="${config.height_weight}">
+                        <span class="range-value">${config.height_weight}</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Expertise Weight</label>
+                        <input type="range" min="0" max="1" step="0.1" data-config="positions.${posName}.expertise_weight" value="${config.expertise_weight}">
+                        <span class="range-value">${config.expertise_weight}</span>
+                    </div>
+                </div>
+            `;
+
+            // Add listeners for range sliders
+            section.querySelectorAll('input[type="range"]').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    const valueSpan = e.target.nextElementSibling;
+                    if (valueSpan) valueSpan.textContent = e.target.value;
+                    updateConfigValue(e.target.dataset.config, parseFloat(e.target.value));
+                });
+            });
+
+            section.querySelectorAll('input[type="number"]').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    updateConfigValue(e.target.dataset.config, parseFloat(e.target.value));
+                });
+            });
+
+            return section;
+        }
+
+        function createQueueSettings(queueName) {
+            const config = state.config.queues[queueName];
+            const section = document.createElement('div');
+            section.className = 'settings-section';
+            section.innerHTML = `
+                <h3>${queueName.charAt(0).toUpperCase() + queueName.slice(1)}</h3>
+                <div class="settings-content">
+                    <div class="setting-row">
+                        <label>Max Depth</label>
+                        <input type="number" min="1" max="20" data-config="queues.${queueName}.max_depth" value="${config.max_depth}">
+                    </div>
+                    <div class="setting-row">
+                        <label>Height Ratio Min (depth 1)</label>
+                        <input type="number" step="0.01" data-config="queues.${queueName}.height_ratio_min" value="${config.height_ratio_min}">
+                    </div>
+                    <div class="setting-row">
+                        <label>Height Ratio Max (depth 1)</label>
+                        <input type="number" step="0.01" data-config="queues.${queueName}.height_ratio_max" value="${config.height_ratio_max}">
+                    </div>
+                    <div class="setting-row">
+                        <label>Queue Height Ratio Min (depth 2+)</label>
+                        <input type="number" step="0.01" data-config="queues.${queueName}.queue_height_ratio_min" value="${config.queue_height_ratio_min}">
+                    </div>
+                    <div class="setting-row">
+                        <label>Queue Height Ratio Max (depth 2+)</label>
+                        <input type="number" step="0.01" data-config="queues.${queueName}.queue_height_ratio_max" value="${config.queue_height_ratio_max}">
+                    </div>
+                </div>
+            `;
+
+            section.querySelectorAll('input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    updateConfigValue(e.target.dataset.config, parseFloat(e.target.value));
+                });
+            });
+
+            return section;
+        }
+
+        function loadSettings() {
+            document.getElementById('optMethod').value = state.config.optimization.method;
+            document.getElementById('useWeight').checked = state.config.optimization.use_weight;
+
+            document.getElementById('optMethod').addEventListener('change', (e) => {
+                state.config.optimization.method = e.target.value;
+            });
+
+            document.getElementById('useWeight').addEventListener('change', (e) => {
+                state.config.optimization.use_weight = e.target.checked;
+            });
+        }
+
+        function updateConfigValue(path, value) {
+            const parts = path.split('.');
+            let obj = state.config;
+            for (let i = 0; i < parts.length - 1; i++) {
+                obj = obj[parts[i]];
+            }
+            obj[parts[parts.length - 1]] = value;
+            
+            // Update indicators as ranges may have changed
+            updateAllSlots();
+        }
+
+        // ============================================================================
+        // IMPORT / EXPORT
+        // ============================================================================
+
+        function exportAssignment() {
+            const data = state.exportJSON();
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const date = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '');
+            a.download = `pinya_assignment_${date}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importAssignment() {
+            const input = document.getElementById('fileInput');
+            input.click();
+        }
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    state.importJSON(data);
+                    initPinya();
+                    updatePool();
+                    updateStatusBar();
+                    showToast('Assignment loaded successfully');
+                } catch (error) {
+                    alert('Error loading file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+
+        // ============================================================================
+        // ZOOM CONTROLS
+        // ============================================================================
+
+        function zoomIn() {
+            state.zoom = Math.min(state.zoom + 0.1, 2);
+            updateZoom();
+        }
+
+        function zoomOut() {
+            state.zoom = Math.max(state.zoom - 0.1, 0.5);
+            updateZoom();
+        }
+
+        function zoomReset() {
+            state.zoom = 1;
+            updateZoom();
+        }
+
+        function updateZoom() {
+            const inner = document.getElementById('canvasInner');
+            inner.style.transform = `translate(-50%, -50%) scale(${state.zoom})`;
+        }
+
+        // ============================================================================
+        // HISTORY
+        // ============================================================================
+
+        function undo() {
+            if (state.undo()) {
+                updateAllSlots();
+                updatePool();
+                updateStatusBar();
+                showToast('Undo');
+            }
+        }
+
+        function redo() {
+            if (state.redo()) {
+                updateAllSlots();
+                updatePool();
+                updateStatusBar();
+                showToast('Redo');
+            }
+        }
+
+        function updateHistoryButtons() {
+            document.getElementById('undoBtn').disabled = state.historyIndex <= 0;
+            document.getElementById('redoBtn').disabled = state.historyIndex >= state.history.length - 1;
+        }
+
+        // ============================================================================
+        // TOAST
+        // ============================================================================
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // ============================================================================
+        // EVENT LISTENERS
+        // ============================================================================
+
+        document.getElementById('autoCompleteBtn').addEventListener('click', autoComplete);
+        document.getElementById('loadBtn').addEventListener('click', importAssignment);
+        document.getElementById('saveBtn').addEventListener('click', exportAssignment);
+        document.getElementById('undoBtn').addEventListener('click', undo);
+        document.getElementById('redoBtn').addEventListener('click', redo);
+        document.getElementById('addCastellerBtn').addEventListener('click', () => openCastellerModal());
+        document.getElementById('zoomInBtn').addEventListener('click', zoomIn);
+        document.getElementById('zoomOutBtn').addEventListener('click', zoomOut);
+        document.getElementById('zoomResetBtn').addEventListener('click', zoomReset);
+        document.getElementById('poolSearch').addEventListener('input', updatePool);
+        document.getElementById('poolSort').addEventListener('change', updatePool);
+        document.getElementById('castellerForm').addEventListener('submit', saveCasteller);
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'z') {
+                    e.preventDefault();
+                    undo();
+                } else if (e.key === 'y') {
+                    e.preventDefault();
+                    redo();
+                } else if (e.key === 's') {
+                    e.preventDefault();
+                    exportAssignment();
+                } else if (e.key === 'f') {
+                    e.preventDefault();
+                    document.getElementById('poolSearch').focus();
+                }
+            }
+        });
+
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+
+        window.addEventListener('DOMContentLoaded', () => {
+            state.loadSampleData();
+            initSettings();
+            initPinya();
+            updatePool();
+            updateStatusBar();
+            updateHistoryButtons();
+        });
+    </script>
+</body>
+</html>
