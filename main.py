@@ -15,9 +15,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from soca.data import get_castellers, Casteller, add_castellers, apply_spec_overrides, POSITION_SPECS
 from soca.assign import apply_preassigned_to_all_assignments
-from soca.optimize import find_optimal_assignment
+from soca.optimize import find_optimal_assignment, assign_rows_pipeline
+import soca.utils
 from soca.utils import build_columns, compute_column_tronc_heights, filter_available_castellers
-from soca.queue_assign import assign_rows_pipeline
 from soca.display import SectionManager, SectionLogger, create_final_panel, summarize_assignments
 from soca.state import AssignmentState, DuplicateAssignmentError
 
@@ -586,10 +586,7 @@ def main():
         refresh_per_second=refresh_per_second,
     )
     # Set TUI manager for all modules
-    import soca.optimize
-    import soca.queue_assign
-    soca.optimize._tui_manager = tui
-    soca.queue_assign._tui_manager = tui
+    soca.utils._tui_manager = tui
     # Define all sections upfront
     tui.add_section("Loading configuration")
     tui.add_section("Loading data")
@@ -640,10 +637,16 @@ def main():
         # ================================================================
         with tui.section("Loading data"):
             logger = SectionLogger(tui, "Loading data")
-            
+            def is_float(x: str):
+                try:
+                    float(x)
+                    return True
+                except (ValueError, TypeError):
+                    return False
             # Load casteller database
             logger.info("[4/5] Loading castellers from database...")
             castellers = get_castellers()
+
             logger.info(f"[4/5] Loaded {len(castellers)} castellers from database")
             
             # Add untracked castellers
@@ -652,7 +655,17 @@ def main():
                 castellers = add_castellers(castellers, untracked)
                 logger.info(f"Total castellers after adding untracked: {len(castellers)}")
             
-            # Initialize AssignmentState as single source of truth
+            # Filter out castellers with missing or invalid critical fields
+            drop_mask = castellers['Nom complet'].isna() | \
+                castellers['Alçada (cm)'].isna() | \
+                ~castellers['Alçada (cm)'].apply(lambda x: is_float(x))
+            if drop_mask.any():
+                logger.warning(f"Dropped the following castellers due to missing or invalid critical info:\n{', '.join(list(castellers.loc[drop_mask, 'Nom complet']))}")
+            castellers = castellers[~drop_mask]
+
+            if castellers.empty:
+                logger.error("No castellers available after loading data. Cannot proceed with assignment.")
+                return
             state = AssignmentState()
             all_assignments = state.to_dict()  # shared ref — state owns the data
             

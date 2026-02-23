@@ -18,7 +18,7 @@ from .utils import (
 )
 from .data import POSITION_SPECS
 from .display import summarize_assignments
-from .queue_assign import assign_rows_pipeline
+from .optimize import assign_rows_pipeline
 from .state import AssignmentState, DuplicateAssignmentError
 
 # Update build_castell_assignment() - replace column references

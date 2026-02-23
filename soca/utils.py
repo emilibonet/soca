@@ -283,3 +283,16 @@ def get_logger(name: str = None) -> logging.Logger:
     logger.addHandler(handler)
     logger.propagate = False
     return logger
+
+
+_tui_manager = None
+
+def _get_tui_logger(section_name=None):
+    """Get TUI-aware logger if manager is available."""
+    if _tui_manager is not None:
+        try:
+            from .display import SectionLogger
+            return SectionLogger(_tui_manager, section_name)
+        except ImportError:
+            pass
+    return None
