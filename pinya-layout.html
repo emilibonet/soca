@@ -17,9 +17,10 @@
             --success: #4caf50;
             --warning: #ff9800;
             --error: #f44336;
-            --rengla: #4a7c9d;
-            --plena: #d9944a;
-            --buida: #6b9d6b;
+            --col: #6b7a8a;
+            --rengla: var(--col);
+            --plena: var(--col);
+            --buida: var(--col);
         }
 
         * {
@@ -248,21 +249,24 @@
             font-size: 10px;
         }
         
-        .slot:not(.tronc):not(.queue-slot):hover {
+        .slot:not(.tronc):hover {
             transform: scale(1.03);
             border-color: var(--accent);
-            box-shadow: 0 0 8px rgba(217, 148, 74, 0.3);
-        }
-        
-        .slot.queue-slot:hover {
-            border-color: var(--accent);
-            box-shadow: 0 0 6px rgba(217, 148, 74, 0.3);
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.08);
         }
 
         .slot.dragging-over {
             border-color: var(--accent);
             background: rgba(217, 148, 74, 0.1);
             transform: scale(1.05);
+        }
+
+        .slot.drag-replace {
+            border-color: var(--accent);
+            border-style: solid;
+            background: rgba(217, 148, 74, 0.08);
+            transform: scale(1.03);
+            box-shadow: 0 0 8px rgba(217, 148, 74, 0.5);
         }
 
         .slot.drag-invalid {
@@ -620,25 +624,22 @@
         /* === RENGLA column (bottom center, x=50%) === */
         .slot.terc-rengla   { left: 50%; top: 44.5%; transform: translateX(-50%); width: 80px; height: 35px; }
         .slot.segon-rengla  { left: 50%; top: 49%;   transform: translateX(-50%); width: 80px; height: 35px; }
-        .slot.crossa-rengla-1 { left: 42.5%; top: 59%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* crossa-rengla are now SVG crossa-wrappers (see below) */
         /* baix-rengla is now an SVG baix-wrapper (see below) */
-        .slot.crossa-rengla-2 { left: 57.5%; top: 59%; transform: translateX(-50%); width: 50px; height: 60px; }
         /* contrafort-rengla is now an SVG contrafort-wrapper (see below) */
 
         /* === BUIDA column (upper left, x=25%) === */
         .slot.terc-buida   { left: 25%; top: 7%;    transform: translateX(-50%); width: 80px; height: 35px; }
         .slot.segon-buida  { left: 25%; top: 11.5%; transform: translateX(-50%); width: 80px; height: 35px; }
-        .slot.crossa-buida-1 { left: 17.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* crossa-buida are now SVG crossa-wrappers (see below) */
         /* baix-buida is now an SVG baix-wrapper (see below) */
-        .slot.crossa-buida-2 { left: 32.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
         /* contrafort-buida is now an SVG contrafort-wrapper (see below) */
 
         /* === PLENA column (upper right, x=75%) === */
         .slot.terc-plena   { left: 75%; top: 7%;    transform: translateX(-50%); width: 80px; height: 35px; }
         .slot.segon-plena  { left: 75%; top: 11.5%; transform: translateX(-50%); width: 80px; height: 35px; }
-        .slot.crossa-plena-1 { left: 67.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
+        /* crossa-plena are now SVG crossa-wrappers (see below) */
         /* baix-plena is now an SVG baix-wrapper (see below) */
-        .slot.crossa-plena-2 { left: 82.5%; top: 23%; transform: translateX(-50%); width: 50px; height: 60px; }
         /* contrafort-plena is now an SVG contrafort-wrapper (see below) */
 
         /* === AGULLA — SVG triangles forming a bigger equilateral triangle (center) ===
@@ -661,17 +662,24 @@
             transition: filter 0.2s;
         }
         .agulla-wrapper:hover .agulla-triangle {
-            filter: drop-shadow(0 0 6px var(--accent));
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
         }
         .agulla-wrapper.filled .agulla-triangle polygon {
             fill: var(--bg-card-hover);
         }
         .agulla-wrapper.filled .agulla-triangle {
-            filter: drop-shadow(0 0 3px var(--accent));
+            filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
         }
         .agulla-wrapper.dragging-over .agulla-triangle polygon {
             stroke-dasharray: 6 3;
             stroke-width: 3;
+        }
+        .agulla-wrapper.drag-replace .agulla-triangle polygon {
+            stroke: var(--accent);
+            stroke-width: 3;
+        }
+        .agulla-wrapper.drag-replace .agulla-triangle {
+            filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
         }
         .agulla-triangle .slot-label {
             fill: var(--text-dim);
@@ -738,17 +746,24 @@
             transition: filter 0.2s;
         }
         .baix-wrapper:hover .baix-rect {
-            filter: drop-shadow(0 0 6px var(--accent));
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
         }
         .baix-wrapper.filled .baix-rect polygon {
             fill: var(--bg-card-hover);
         }
         .baix-wrapper.filled .baix-rect {
-            filter: drop-shadow(0 0 3px var(--accent));
+            filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
         }
         .baix-wrapper.dragging-over .baix-rect polygon {
             stroke-dasharray: 6 3;
             stroke-width: 3;
+        }
+        .baix-wrapper.drag-replace .baix-rect polygon {
+            stroke: var(--accent);
+            stroke-width: 3;
+        }
+        .baix-wrapper.drag-replace .baix-rect {
+            filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
         }
         .baix-rect .slot-label {
             fill: var(--text-dim);
@@ -810,17 +825,24 @@
             transition: filter 0.2s;
         }
         .contrafort-wrapper:hover .contrafort-rect {
-            filter: drop-shadow(0 0 6px var(--accent));
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
         }
         .contrafort-wrapper.filled .contrafort-rect polygon {
             fill: var(--bg-card-hover);
         }
         .contrafort-wrapper.filled .contrafort-rect {
-            filter: drop-shadow(0 0 3px var(--accent));
+            filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
         }
         .contrafort-wrapper.dragging-over .contrafort-rect polygon {
             stroke-dasharray: 6 3;
             stroke-width: 3;
+        }
+        .contrafort-wrapper.drag-replace .contrafort-rect polygon {
+            stroke: var(--accent);
+            stroke-width: 3;
+        }
+        .contrafort-wrapper.drag-replace .contrafort-rect {
+            filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
         }
         .contrafort-rect .slot-label {
             fill: var(--text-dim);
@@ -865,6 +887,106 @@
             height: 133px;
         }
 
+        /* === CROSSA — SVG rectangles flanking the combined baix+contrafort short sides ===
+           Each crossa spans the full height of baix+contrafort (~110px).
+           Long side of crossa touches the short side of the combined baix+contrafort strip.
+           Two crosses per column: one on each lateral side of the strip.  */
+
+        .crossa-wrapper {
+            position: absolute;
+            cursor: pointer;
+            z-index: 9;
+        }
+        .crossa-wrapper .crossa-rect {
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 0 2px var(--border));
+            transition: filter 0.2s;
+        }
+        .crossa-wrapper:hover .crossa-rect {
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+        }
+        .crossa-wrapper.filled .crossa-rect polygon {
+            fill: var(--bg-card-hover);
+        }
+        .crossa-wrapper.filled .crossa-rect {
+            filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+        }
+        .crossa-wrapper.dragging-over .crossa-rect polygon {
+            stroke-dasharray: 6 3;
+            stroke-width: 3;
+        }
+        .crossa-wrapper.drag-replace .crossa-rect polygon {
+            stroke: var(--accent);
+            stroke-width: 3;
+        }
+        .crossa-wrapper.drag-replace .crossa-rect {
+            filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+        }
+        .crossa-rect .slot-label {
+            fill: var(--text-dim);
+            font-size: 10px;
+            pointer-events: none;
+        }
+        .crossa-rect .slot-name {
+            fill: var(--text);
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .crossa-rect .slot-height {
+            fill: var(--text-dim);
+            font-size: 9px;
+            pointer-events: none;
+        }
+        .crossa-rect .indicator-text {
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        /* Rengla — left crossa (horizontal rect, left of baix+contrafort) */
+        .crossa-wrapper.crossa-rengla-0 {
+            left: calc(50% - 110px);
+            top: calc(45% + 47px);
+            width: 50px;
+            height: 110px;
+        }
+        /* Rengla — right crossa (horizontal rect, right of baix+contrafort) */
+        .crossa-wrapper.crossa-rengla-1 {
+            left: calc(50% + 60px);
+            top: calc(45% + 47px);
+            width: 50px;
+            height: 110px;
+        }
+        /* Buida — upper crossa (outward from upper short side) */
+        .crossa-wrapper.crossa-buida-0 {
+            left: calc(50% - 105px);
+            top: calc(45% - 173px);
+            width: 120px;
+            height: 97px;
+        }
+        /* Buida — lower crossa (outward from lower short side) */
+        .crossa-wrapper.crossa-buida-1 {
+            left: calc(50% - 190px);
+            top: calc(45% - 26px);
+            width: 120px;
+            height: 98px;
+        }
+        /* Plena — upper crossa (outward from upper short side) */
+        .crossa-wrapper.crossa-plena-0 {
+            left: calc(50% - 15px);
+            top: calc(45% - 173px);
+            width: 120px;
+            height: 97px;
+        }
+        /* Plena — lower crossa (outward from lower short side) */
+        .crossa-wrapper.crossa-plena-1 {
+            left: calc(50% + 70px);
+            top: calc(45% - 26px);
+            width: 120px;
+            height: 98px;
+        }
+
         /* === DOSOS (pom — center of triangle) === */
         .slot.dosos-1 { left: 47%; top: 38%; transform: translateX(-50%); width: 60px; height: 35px; }
         .slot.dosos-2 { left: 53%; top: 38%; transform: translateX(-50%); width: 60px; height: 35px; }
@@ -886,17 +1008,77 @@
             transition: filter 0.2s;
         }
         .mans-wrapper:hover .mans-rect {
-            filter: drop-shadow(0 0 6px var(--accent));
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
         }
         .mans-wrapper.filled .mans-rect polygon {
             fill: var(--bg-card-hover);
         }
         .mans-wrapper.filled .mans-rect {
-            filter: drop-shadow(0 0 3px var(--accent));
+            filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
         }
         .mans-wrapper.dragging-over .mans-rect polygon {
             stroke-dasharray: 6 3;
             stroke-width: 3;
+        }
+        /* Mans drag action feedback — substitute mode */
+        .mans-wrapper.drag-substitute .mans-rect polygon {
+            stroke: var(--accent);
+            stroke-width: 3;
+        }
+        .mans-wrapper.drag-substitute .mans-rect {
+            filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+        }
+        /* Mans drag action feedback — insert mode */
+        .mans-wrapper.drag-insert .mans-rect polygon {
+            stroke: var(--success);
+            stroke-width: 3;
+            stroke-dasharray: 8 4;
+        }
+        .mans-wrapper.drag-insert .mans-rect {
+            filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.5));
+        }
+        /* Mans insert indicator line */
+        .mans-insert-line {
+            position: absolute;
+            background: var(--success);
+            border-radius: 2px;
+            pointer-events: none;
+            z-index: 30;
+            opacity: 0;
+            transition: opacity 0.15s;
+            box-shadow: 0 0 8px var(--success), 0 0 16px rgba(76, 175, 80, 0.3);
+        }
+        .mans-insert-line.visible {
+            opacity: 1;
+        }
+        /* Mans drag action label */
+        .mans-drag-label {
+            position: absolute;
+            top: -18px;
+            left: 50%;
+            background: var(--bg-dark);
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 31;
+            opacity: 0;
+            transition: opacity 0.15s;
+            transform: translateX(-50%);
+        }
+        .mans-wrapper.drag-substitute .mans-drag-label,
+        .mans-wrapper.drag-insert .mans-drag-label {
+            opacity: 1;
+        }
+        .mans-wrapper.drag-substitute .mans-drag-label {
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+        .mans-wrapper.drag-insert .mans-drag-label {
+            color: var(--success);
+            border: 1px solid var(--success);
         }
         .mans-rect .slot-label {
             fill: var(--text-dim);
@@ -919,76 +1101,92 @@
             pointer-events: none;
         }
 
-        /* DAUS queues — between adjacent columns (no rotation) */
-        .queue-daus-rp {
-            left: 66%; top: 44%;
-            transform: translateX(-50%);
-        }
-        .queue-daus-pb {
-            left: 50%; top: 7%;
-            transform: translateX(-50%);
-        }
-        .queue-daus-br {
-            left: 34%; top: 44%;
-            transform: translateX(-50%);
-        }
-
-        /* LATERALS queues — flanking each column (no rotation) */
-        .queue-laterals-rengla-left  { left: 33%; top: 63%; transform: translateX(-50%); }
-        .queue-laterals-rengla-right { left: 67%; top: 63%; transform: translateX(-50%); }
-        .queue-laterals-plena-left   { left: 59%; top: 27%; transform: translateX(-50%); }
-        .queue-laterals-plena-right  { left: 91%; top: 27%; transform: translateX(-50%); }
-        .queue-laterals-buida-left   { left:  9%; top: 27%; transform: translateX(-50%); }
-        .queue-laterals-buida-right  { left: 41%; top: 27%; transform: translateX(-50%); }
-
-        .queue-slot {
-            margin-bottom: 3px;
-            width: 75px;
-            height: 42px;
-            font-size: 10px;
-        }
-
-        .queue-container {
+        /* === MATRIX — SVG slot wrappers (laterals + daus) between columns === */
+        .matrix-slot-wrapper {
             position: absolute;
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
+            cursor: pointer;
+            z-index: 6;
         }
-        
-        .queue-slot .slot-name {
+        .matrix-slot-wrapper .matrix-slot-rect {
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 0 2px var(--border));
+            transition: filter 0.2s;
+        }
+        .matrix-slot-wrapper:hover .matrix-slot-rect {
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+        }
+        .matrix-slot-wrapper.filled .matrix-slot-rect polygon {
+            fill: var(--bg-card-hover);
+        }
+        .matrix-slot-wrapper.filled .matrix-slot-rect {
+            filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+        }
+        .matrix-slot-wrapper.dragging-over .matrix-slot-rect polygon {
+            stroke-dasharray: 6 3;
+            stroke-width: 3;
+        }
+        .matrix-slot-wrapper.drag-substitute .matrix-slot-rect polygon {
+            stroke: var(--accent);
+            stroke-width: 3;
+        }
+        .matrix-slot-wrapper.drag-substitute .matrix-slot-rect {
+            filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+        }
+        .matrix-slot-wrapper.drag-insert .matrix-slot-rect polygon {
+            stroke: var(--success);
+            stroke-width: 3;
+            stroke-dasharray: 8 4;
+        }
+        .matrix-slot-wrapper.drag-insert .matrix-slot-rect {
+            filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.5));
+        }
+        .matrix-slot-rect .slot-label {
+            fill: var(--text-dim);
             font-size: 10px;
-            line-height: 1.1;
+            pointer-events: none;
         }
-        
-        .queue-slot .slot-height {
+        .matrix-slot-rect .slot-name {
+            fill: var(--text);
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .matrix-slot-rect .slot-height {
+            fill: var(--text-dim);
             font-size: 9px;
+            pointer-events: none;
         }
-        
-        .queue-slot .slot-indicators {
-            margin-top: 2px;
+        .matrix-slot-rect .indicator-text {
+            font-size: 10px;
+            pointer-events: none;
         }
-        
-        .queue-slot .indicator {
-            width: 12px;
-            height: 12px;
-            font-size: 8px;
-        }
-        
-        .queue-container::before {
-            content: attr(data-queue-type) ' ' attr(data-queue-id);
+        /* Matrix drag action label */
+        .matrix-slot-wrapper .matrix-drag-label {
             position: absolute;
-            top: -20px;
+            top: -18px;
             left: 50%;
-            transform: translateX(-50%);
-            font-size: 9px;
-            color: var(--accent);
-            opacity: 0.4;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            white-space: nowrap;
             background: var(--bg-dark);
-            padding: 2px 6px;
+            padding: 2px 8px;
             border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 31;
+            opacity: 0;
+            transition: opacity 0.15s;
+            transform: translateX(-50%);
+        }
+        .matrix-slot-wrapper.drag-substitute .matrix-drag-label {
+            opacity: 1;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+        .matrix-slot-wrapper.drag-insert .matrix-drag-label {
+            opacity: 1;
+            color: var(--success);
+            border: 1px solid var(--success);
         }
         
         .column-label {
@@ -1005,21 +1203,21 @@
             left: 50%;
             top: 96%;
             transform: translateX(-50%);
-            color: var(--rengla);
+            color: var(--col);
         }
         
         .label-plena {
             left: 92%;
             top: 5%;
             transform: translateX(-50%);
-            color: var(--plena);
+            color: var(--col);
         }
         
         .label-buida {
             left: 8%;
             top: 5%;
             transform: translateX(-50%);
-            color: var(--buida);
+            color: var(--col);
         }
         
         /* Triangle guide */
@@ -1046,26 +1244,7 @@
             clip-path: polygon(50% 100%, 10% 0%, 90% 0%);
         }
 
-        .queue-add-btn {
-            width: 75px;
-            height: 28px;
-            background: var(--bg-dark);
-            border: 1px dashed var(--border);
-            border-radius: 4px;
-            color: var(--text-dim);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            margin-top: 4px;
-            transition: all 0.2s;
-        }
 
-        .queue-add-btn:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
 
         /* Scrollbar styling */
         ::-webkit-scrollbar {
@@ -1430,6 +1609,88 @@
             }
         };
 
+        /* Per-matrix geometry for SVG slot wrappers (laterals + daus).
+           Each matrix sits in the gap between two adjacent columns,
+           growing outward from the center of the pinya.
+           originX/Y: center of first-row middle-column cell (offset from 50%/45%).
+           outX/Y: unit outward direction (depth stacking).
+           edgeX/Y: unit along-edge direction (col 0 → col 2).
+           depthSpacing/colSpacing: px between rows/columns.
+           w/h/viewBox/points: SVG wrapper dimensions and parallelogram polygon. */
+        const MATRIX_GEOMETRY = {
+            'R\u2194P': {
+                outX: 0.866, outY: 0.5,
+                edgeX: -0.5, edgeY: 0.866,
+                originX: 181, originY: 105,
+                depthSpacing: 58,
+                colSpacing: 125,
+                w: 108, h: 132,
+                viewBox: '0 0 108 132',
+                points: '60,0 108,28 48,132 0,104',
+                textX: 54, textY: 66,
+                strokeColors: ['var(--rengla)', 'var(--accent)', 'var(--plena)']
+            },
+            'P\u2194B': {
+                outX: 0, outY: -1,
+                edgeX: -1, edgeY: 0,
+                originX: 0, originY: -210,
+                depthSpacing: 58,
+                colSpacing: 125,
+                w: 120, h: 55,
+                viewBox: '0 0 120 55',
+                points: '0,0 120,0 120,55 0,55',
+                textX: 60, textY: 30,
+                strokeColors: ['var(--plena)', 'var(--accent)', 'var(--buida)']
+            },
+            'B\u2194R': {
+                outX: -0.866, outY: 0.5,
+                edgeX: 0.5, edgeY: 0.866,
+                originX: -181, originY: 105,
+                depthSpacing: 58,
+                colSpacing: 125,
+                w: 108, h: 132,
+                viewBox: '0 0 108 132',
+                points: '48,0 108,104 60,132 0,28',
+                textX: 54, textY: 66,
+                strokeColors: ['var(--buida)', 'var(--accent)', 'var(--rengla)']
+            }
+        };
+
+        /* Matrix configs: fused laterals + daus between each pair of columns.
+           Each matrix has 3 columns: lateral-left, daus, lateral-right. */
+        const MATRIX_CONFIGS = [
+            {
+                id: 'R↔P',
+                label: 'R ↔ P',
+                columns: [
+                    { queueType: 'laterals', queueId: 'Rengla-right', header: 'Lat R→' },
+                    { queueType: 'daus', queueId: 'R↔P', header: 'Daus' },
+                    { queueType: 'laterals', queueId: 'Plena-left', header: '←Lat P' }
+                ],
+                cssClass: 'matrix-rp'
+            },
+            {
+                id: 'P↔B',
+                label: 'P ↔ B',
+                columns: [
+                    { queueType: 'laterals', queueId: 'Plena-right', header: 'Lat P→' },
+                    { queueType: 'daus', queueId: 'P↔B', header: 'Daus' },
+                    { queueType: 'laterals', queueId: 'Buida-left', header: '←Lat B' }
+                ],
+                cssClass: 'matrix-pb'
+            },
+            {
+                id: 'B↔R',
+                label: 'B ↔ R',
+                columns: [
+                    { queueType: 'laterals', queueId: 'Buida-right', header: 'Lat B→' },
+                    { queueType: 'daus', queueId: 'B↔R', header: 'Daus' },
+                    { queueType: 'laterals', queueId: 'Rengla-left', header: '←Lat R' }
+                ],
+                cssClass: 'matrix-br'
+            }
+        ];
+
         class AppState {
             constructor() {
                 this.castellers = [];
@@ -1451,6 +1712,7 @@
                 this.zoom = 1;
                 this.draggedElement = null;
                 this.draggedCasteller = null;
+                this.dragSourcePosId = null;
             }
 
             loadSampleData() {
@@ -1524,14 +1786,10 @@
             removeFromSlot(positionId) {
                 const [posType, col, idx] = this.parsePositionId(positionId);
                 
-                if (posType === 'mans') {
+                if (['mans', 'daus', 'laterals'].includes(posType)) {
                     // Stack behavior: splice out and shift everyone behind forward
-                    if (this.assignments.mans[col] && idx < this.assignments.mans[col].length) {
-                        this.assignments.mans[col].splice(idx, 1);
-                    }
-                } else if (['daus', 'laterals'].includes(posType)) {
-                    if (this.assignments[posType][col] && this.assignments[posType][col][idx]) {
-                        this.assignments[posType][col][idx] = [null];
+                    if (this.assignments[posType]?.[col] && idx < this.assignments[posType][col].length) {
+                        this.assignments[posType][col].splice(idx, 1);
                     }
                 } else {
                     if (this.assignments[posType][col]) {
@@ -1549,18 +1807,10 @@
                     for (const [col, val] of Object.entries(cols)) {
                         if (Array.isArray(val)) {
                             if (val.length > 0 && Array.isArray(val[0])) {
-                                // Queue position — use splice for mans to implement stack shift
-                                if (posType === 'mans') {
-                                    for (let i = val.length - 1; i >= 0; i--) {
-                                        if (val[i][0] === name) {
-                                            val.splice(i, 1);
-                                        }
-                                    }
-                                } else {
-                                    for (let i = 0; i < val.length; i++) {
-                                        if (val[i][0] === name) {
-                                            val[i] = [null];
-                                        }
+                                // Queue position — splice for stack shift (all queue types)
+                                for (let i = val.length - 1; i >= 0; i--) {
+                                    if (val[i][0] === name) {
+                                        val.splice(i, 1);
                                     }
                                 }
                             } else {
@@ -1792,13 +2042,7 @@
                 { id: 'dosos-Rengla-0', type: 'dosos', col: 'Rengla', label: 'Dosos R', class: 'dosos-1 tronc', readOnly: true },
                 { id: 'dosos-Plena-Buida-0', type: 'dosos', col: 'Plena-Buida', label: 'Dosos P-B', class: 'dosos-2 tronc', readOnly: true },
                 
-                // CROSSA
-                { id: 'crossa-Rengla-0', type: 'crossa', col: 'Rengla', idx: 0, label: 'Crossa R-1', class: 'crossa-rengla-1 col-rengla' },
-                { id: 'crossa-Rengla-1', type: 'crossa', col: 'Rengla', idx: 1, label: 'Crossa R-2', class: 'crossa-rengla-2 col-rengla' },
-                { id: 'crossa-Plena-0', type: 'crossa', col: 'Plena', idx: 0, label: 'Crossa P-1', class: 'crossa-plena-1 col-plena' },
-                { id: 'crossa-Plena-1', type: 'crossa', col: 'Plena', idx: 1, label: 'Crossa P-2', class: 'crossa-plena-2 col-plena' },
-                { id: 'crossa-Buida-0', type: 'crossa', col: 'Buida', idx: 0, label: 'Crossa B-1', class: 'crossa-buida-1 col-buida' },
-                { id: 'crossa-Buida-1', type: 'crossa', col: 'Buida', idx: 1, label: 'Crossa B-2', class: 'crossa-buida-2 col-buida' },
+                // CROSSA — now SVG crossa-wrapper (see below)
                 
                 // CONTRAFORT — now SVG contrafort-wrapper (see below)
                 
@@ -2019,18 +2263,101 @@
                 container.appendChild(wrapper);
             });
 
+            // CROSSA — SVG rectangles flanking the combined baix+contrafort short sides
+            const crossaConfigs = [
+                {
+                    id: 'crossa-Rengla-0', col: 'Rengla', label: 'Crossa R-1',
+                    cls: 'crossa-rengla-0 col-rengla',
+                    viewBox: '0 0 50 110',
+                    points: '0,0 50,0 50,110 0,110',
+                    stroke: 'var(--rengla)',
+                    textX: 25, textY: 55
+                },
+                {
+                    id: 'crossa-Rengla-1', col: 'Rengla', label: 'Crossa R-2',
+                    cls: 'crossa-rengla-1 col-rengla',
+                    viewBox: '0 0 50 110',
+                    points: '0,0 50,0 50,110 0,110',
+                    stroke: 'var(--rengla)',
+                    textX: 25, textY: 55
+                },
+                {
+                    id: 'crossa-Buida-0', col: 'Buida', label: 'Crossa B-1',
+                    cls: 'crossa-buida-0 col-buida',
+                    viewBox: '0 0 120 97',
+                    points: '120,54 25,0 0,43 95,97',
+                    stroke: 'var(--buida)',
+                    textX: 60, textY: 49
+                },
+                {
+                    id: 'crossa-Buida-1', col: 'Buida', label: 'Crossa B-2',
+                    cls: 'crossa-buida-1 col-buida',
+                    viewBox: '0 0 120 98',
+                    points: '95,98 0,43 25,0 120,55',
+                    stroke: 'var(--buida)',
+                    textX: 60, textY: 49
+                },
+                {
+                    id: 'crossa-Plena-0', col: 'Plena', label: 'Crossa P-1',
+                    cls: 'crossa-plena-0 col-plena',
+                    viewBox: '0 0 120 97',
+                    points: '0,54 95,0 120,43 25,97',
+                    stroke: 'var(--plena)',
+                    textX: 60, textY: 49
+                },
+                {
+                    id: 'crossa-Plena-1', col: 'Plena', label: 'Crossa P-2',
+                    cls: 'crossa-plena-1 col-plena',
+                    viewBox: '0 0 120 98',
+                    points: '25,98 120,43 95,0 0,55',
+                    stroke: 'var(--plena)',
+                    textX: 60, textY: 49
+                }
+            ];
+            crossaConfigs.forEach(cfg => {
+                const wrapper = document.createElement('div');
+                wrapper.className = `crossa-wrapper ${cfg.cls}`;
+                wrapper.dataset.positionId = cfg.id;
+                wrapper.dataset.positionType = 'crossa';
+                wrapper.dataset.readOnly = 'false';
+
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'crossa-rect');
+                svg.setAttribute('viewBox', cfg.viewBox);
+                svg.setAttribute('width', '100%');
+                svg.setAttribute('height', '100%');
+
+                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                poly.setAttribute('points', cfg.points);
+                poly.setAttribute('fill', 'var(--bg-card)');
+                poly.setAttribute('stroke', cfg.stroke);
+                poly.setAttribute('stroke-width', '2');
+                svg.appendChild(poly);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', cfg.textX);
+                label.setAttribute('y', cfg.textY);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('class', 'slot-label');
+                label.textContent = cfg.label;
+                svg.appendChild(label);
+
+                const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                content.setAttribute('class', 'slot-content');
+                svg.appendChild(content);
+
+                wrapper.appendChild(svg);
+
+                wrapper.addEventListener('dragover', handleDragOver);
+                wrapper.addEventListener('drop', handleDrop);
+                wrapper.addEventListener('dragleave', handleDragLeave);
+                wrapper.addEventListener('click', () => showSmartSuggestions(cfg.id));
+
+                container.appendChild(wrapper);
+            });
+
             // Mans queues are created dynamically by rebuildMansQueues() in updateAllSlots()
-
-            createQueueContainer(container, 'daus', 'R↔P', 'queue-daus-rp', 'col-rengla');
-            createQueueContainer(container, 'daus', 'P↔B', 'queue-daus-pb', 'col-plena');
-            createQueueContainer(container, 'daus', 'B↔R', 'queue-daus-br', 'col-buida');
-
-            createQueueContainer(container, 'laterals', 'Rengla-left', 'queue-laterals-rengla-left', 'col-rengla');
-            createQueueContainer(container, 'laterals', 'Rengla-right', 'queue-laterals-rengla-right', 'col-rengla');
-            createQueueContainer(container, 'laterals', 'Plena-left', 'queue-laterals-plena-left', 'col-plena');
-            createQueueContainer(container, 'laterals', 'Plena-right', 'queue-laterals-plena-right', 'col-plena');
-            createQueueContainer(container, 'laterals', 'Buida-left', 'queue-laterals-buida-left', 'col-buida');
-            createQueueContainer(container, 'laterals', 'Buida-right', 'queue-laterals-buida-right', 'col-buida');
+            // Matrix queues (laterals + daus) are created dynamically by rebuildMatrixQueues()
         }
 
         function createSlot(config) {
@@ -2055,92 +2382,200 @@
             return slot;
         }
 
-        function createQueueContainer(parent, queueType, queueId, className, colClass) {
-            const container = document.createElement('div');
-            container.className = `queue-container ${className}`;
-            container.dataset.queueType = queueType;
-            container.dataset.queueId = queueId;
+        function createQueueContainer() { /* removed — replaced by matrix */ }
+        function createQueueSlot() { /* removed — replaced by matrix */ }
+        function addQueueDepth() { /* removed — replaced by matrix */ }
 
-            // Get max depth from config
-            const maxDepth = state.config.queues[queueType]?.max_depth || 4;
+        // ============================================================
+        // MATRIX QUEUES — fused laterals + daus between columns
+        // ============================================================
 
-            // Create initial slots based on existing assignments or default depth
-            const existing = state.assignments[queueType]?.[queueId] || [];
-            const depth = Math.max(existing.length, 1);
+        function rebuildMatrixQueues() {
+            const container = document.getElementById('canvasInner');
 
-            for (let i = 0; i < depth; i++) {
-                const slot = createQueueSlot(queueType, queueId, i, colClass);
-                container.appendChild(slot);
-            }
+            // Remove old matrix slot wrappers, legacy containers, and old insert line
+            container.querySelectorAll('.matrix-slot-wrapper').forEach(el => el.remove());
+            container.querySelectorAll('.matrix-container').forEach(el => el.remove());
+            const oldMatrixLine = container.querySelector('#matrixInsertLine');
+            if (oldMatrixLine) oldMatrixLine.remove();
 
-            // Add button to add more depth
-            if (depth < maxDepth) {
-                const addBtn = document.createElement('button');
-                addBtn.className = 'queue-add-btn';
-                addBtn.textContent = '+';
-                addBtn.title = `Add depth ${depth + 1}`;
-                addBtn.onclick = () => addQueueDepth(queueType, queueId);
-                container.appendChild(addBtn);
-            }
+            MATRIX_CONFIGS.forEach(cfg => {
+                const geo = MATRIX_GEOMETRY[cfg.id];
+                if (!geo) return;
 
-            parent.appendChild(container);
+                // Determine max depth across all 3 columns
+                const depths = cfg.columns.map(col => {
+                    const existing = state.assignments[col.queueType]?.[col.queueId] || [];
+                    return existing.length;
+                });
+                const maxDepth = Math.max(...depths, 0) + 1; // +1 for empty drop target row
+
+                // Create SVG wrapper for each cell
+                for (let d = 0; d < maxDepth; d++) {
+                    cfg.columns.forEach((col, colIdx) => {
+                        const wrapper = createMatrixSlotSVG(cfg, geo, col, colIdx, d);
+                        container.appendChild(wrapper);
+                        updateMatrixSlot(`${col.queueType}-${col.queueId}-${d}`);
+                    });
+                }
+            });
+
+            // Create reusable matrix insert line indicator element
+            const matrixLine = document.createElement('div');
+            matrixLine.className = 'mans-insert-line';
+            matrixLine.id = 'matrixInsertLine';
+            container.appendChild(matrixLine);
         }
 
-        function createQueueSlot(queueType, queueId, depth, colClass) {
-            const slot = document.createElement('div');
-            slot.className = `slot queue-slot ${colClass}`;
-            const posId = `${queueType}-${queueId}-${depth}`;
-            slot.dataset.positionId = posId;
-            slot.dataset.positionType = queueType;
-            
-            slot.addEventListener('dragover', handleDragOver);
-            slot.addEventListener('drop', handleDrop);
-            slot.addEventListener('dragleave', handleDragLeave);
-            slot.addEventListener('click', () => showSmartSuggestions(posId));
+        function createMatrixSlotSVG(matrixCfg, geo, col, colIdx, depth) {
+            const posId = `${col.queueType}-${col.queueId}-${depth}`;
 
-            const label = document.createElement('div');
-            label.className = 'slot-label';
-            label.textContent = `${depth + 1}`;
-            slot.appendChild(label);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'matrix-slot-wrapper';
+            wrapper.dataset.positionId = posId;
+            wrapper.dataset.positionType = col.queueType;
+            wrapper.dataset.matrixId = matrixCfg.id;
+            wrapper.dataset.matrixQueueType = col.queueType;
+            wrapper.dataset.matrixQueueId = col.queueId;
+            wrapper.dataset.matrixDepth = String(depth);
+            wrapper.dataset.matrixColIdx = String(colIdx);
+            wrapper.dataset.readOnly = 'false';
 
-            return slot;
+            // Compute cell center position (offset from 50%/45%)
+            const colOffset = colIdx - 1; // -1, 0, +1 for the three columns
+            const cx = geo.originX + colOffset * geo.colSpacing * geo.edgeX + depth * geo.depthSpacing * geo.outX;
+            const cy = geo.originY + colOffset * geo.colSpacing * geo.edgeY + depth * geo.depthSpacing * geo.outY;
+
+            // Position wrapper's top-left corner
+            const left = cx - geo.w / 2;
+            const top = cy - geo.h / 2;
+            wrapper.style.left = `calc(50% + ${left}px)`;
+            wrapper.style.top = `calc(45% + ${top}px)`;
+            wrapper.style.width = `${geo.w}px`;
+            wrapper.style.height = `${geo.h}px`;
+
+            // Shallower depth = higher z-index
+            wrapper.style.zIndex = 20 - depth;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'matrix-slot-rect');
+            svg.setAttribute('viewBox', geo.viewBox);
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+
+            const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            poly.setAttribute('points', geo.points);
+            poly.setAttribute('fill', 'var(--bg-card)');
+            poly.setAttribute('stroke', geo.strokeColors[colIdx]);
+            poly.setAttribute('stroke-width', '2');
+            svg.appendChild(poly);
+
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', geo.textX);
+            label.setAttribute('y', geo.textY);
+            label.setAttribute('text-anchor', 'middle');
+            label.setAttribute('class', 'slot-label');
+            label.textContent = `${col.header} ${depth + 1}`;
+            svg.appendChild(label);
+
+            const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            content.setAttribute('class', 'slot-content');
+            svg.appendChild(content);
+
+            wrapper.appendChild(svg);
+
+            // Drag action label (hidden by default, shown during dragover)
+            const dragLabel = document.createElement('div');
+            dragLabel.className = 'matrix-drag-label';
+            wrapper.appendChild(dragLabel);
+
+            wrapper.addEventListener('dragover', handleDragOver);
+            wrapper.addEventListener('drop', handleDrop);
+            wrapper.addEventListener('dragleave', handleDragLeave);
+            wrapper.addEventListener('click', () => showSmartSuggestions(posId));
+
+            return wrapper;
         }
 
-        function addQueueDepth(queueType, queueId) {
-            const container = document.querySelector(`[data-queue-type="${queueType}"][data-queue-id="${queueId}"]`);
-            if (!container) return;
+        function updateMatrixSlot(positionId) {
+            const wrapper = document.querySelector(`.matrix-slot-wrapper[data-position-id="${positionId}"]`);
+            if (!wrapper) return;
 
-            const slots = container.querySelectorAll('.queue-slot');
-            const newDepth = slots.length;
-            const maxDepth = state.config.queues[queueType]?.max_depth || 4;
+            const svg = wrapper.querySelector('.matrix-slot-rect');
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+            const content = svg.querySelector('.slot-content');
+            const label = svg.querySelector('.slot-label');
 
-            if (newDepth >= maxDepth) {
-                showToast(`Maximum depth (${maxDepth}) reached for ${queueType}`);
-                return;
+            // Clear content group
+            content.innerHTML = '';
+
+            // Get text anchor from label
+            const tx = parseFloat(label.getAttribute('x'));
+            const ty = parseFloat(label.getAttribute('y'));
+
+            if (casteller) {
+                wrapper.classList.add('filled');
+                label.setAttribute('opacity', '0.3');
+
+                const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                nameEl.setAttribute('x', tx);
+                nameEl.setAttribute('y', ty - 6);
+                nameEl.setAttribute('text-anchor', 'middle');
+                nameEl.setAttribute('class', 'slot-name');
+                nameEl.textContent = casteller.name;
+                content.appendChild(nameEl);
+
+                const heightEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                heightEl.setAttribute('x', tx);
+                heightEl.setAttribute('y', ty + 7);
+                heightEl.setAttribute('text-anchor', 'middle');
+                heightEl.setAttribute('class', 'slot-height');
+                heightEl.textContent = `${casteller.height}`;
+                content.appendChild(heightEl);
+
+                wrapper.draggable = true;
+                wrapper.ondragstart = handleDragStart;
+                wrapper.ondragend = handleDragEnd;
+            } else {
+                wrapper.classList.remove('filled');
+                wrapper.draggable = false;
+                wrapper.ondragstart = null;
+                wrapper.ondragend = null;
+                label.setAttribute('opacity', '1');
             }
+        }
 
-            // Get column class
-            const colClass = slots[0]?.className.match(/col-\w+/)?.[0] || '';
+        /** Detect whether a drag over a matrix slot should substitute or insert.
+         *  Projects cursor onto the outward direction of the matrix.
+         *  - Center 50% → substitute (replace)
+         *  - Leading 25% (toward center) → insert before
+         *  - Trailing 25% (away from center) → insert after
+         */
+        function getMatrixDropAction(wrapper, e) {
+            const depth = parseInt(wrapper.dataset.matrixDepth);
+            const posId = wrapper.dataset.positionId;
+            const existingName = state.getSlotContent(posId);
 
-            // Create new slot
-            const newSlot = createQueueSlot(queueType, queueId, newDepth, colClass);
+            // Empty slot → always substitute (fill)
+            if (!existingName) return { action: 'substitute', insertIndex: null };
 
-            // Insert before add button
-            const addBtn = container.querySelector('.queue-add-btn');
-            container.insertBefore(newSlot, addBtn);
+            const matrixId = wrapper.dataset.matrixId;
+            const geo = MATRIX_GEOMETRY[matrixId];
 
-            // Initialize assignment array if needed
-            if (!state.assignments[queueType][queueId]) {
-                state.assignments[queueType][queueId] = [];
-            }
-            state.assignments[queueType][queueId].push([null]);
+            // Get cursor position relative to wrapper center
+            const rect = wrapper.getBoundingClientRect();
+            const cx = e.clientX - (rect.left + rect.width / 2);
+            const cy = e.clientY - (rect.top + rect.height / 2);
 
-            // Hide add button if max depth reached
-            if (newDepth + 1 >= maxDepth) {
-                addBtn.style.display = 'none';
-            }
+            // Project cursor onto outward direction
+            const proj = cx * geo.outX + cy * geo.outY;
+            const halfDepth = geo.depthSpacing / 2;
+            const normalized = proj / halfDepth;
 
-            state.saveHistory(`Added depth ${newDepth + 1} to ${queueType} ${queueId}`);
+            if (normalized < -0.4) return { action: 'insert', insertIndex: depth };
+            if (normalized > 0.4)  return { action: 'insert', insertIndex: depth + 1 };
+            return { action: 'substitute', insertIndex: null };
         }
 
         // ============================================================
@@ -2167,6 +2602,9 @@
             wrapper.style.top    = `calc(45% + ${top}px)`;
             wrapper.style.width  = `${geo.w}px`;
             wrapper.style.height = `${geo.h}px`;
+
+            // Shallower depth = higher z-index (on top), fixes overlapping grab issue
+            wrapper.style.zIndex = 20 - depth;
 
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('class', 'mans-rect');
@@ -2195,6 +2633,11 @@
 
             wrapper.appendChild(svg);
 
+            // Drag action label (hidden by default, shown during dragover)
+            const dragLabel = document.createElement('div');
+            dragLabel.className = 'mans-drag-label';
+            wrapper.appendChild(dragLabel);
+
             wrapper.addEventListener('dragover', handleDragOver);
             wrapper.addEventListener('drop', handleDrop);
             wrapper.addEventListener('dragleave', handleDragLeave);
@@ -2206,8 +2649,10 @@
         function rebuildMansQueues() {
             const container = document.getElementById('canvasInner');
 
-            // Remove all existing mans wrappers
+            // Remove all existing mans wrappers and old insert line
             container.querySelectorAll('.mans-wrapper').forEach(el => el.remove());
+            const oldLine = container.querySelector('.mans-insert-line');
+            if (oldLine) oldLine.remove();
 
             ['Rengla', 'Plena', 'Buida'].forEach(col => {
                 const existing = state.assignments.mans?.[col] || [];
@@ -2220,6 +2665,272 @@
                     updateMansSlot(`mans-${col}-${i}`);
                 }
             });
+
+            // Create reusable insert line indicator element
+            const insertLine = document.createElement('div');
+            insertLine.className = 'mans-insert-line';
+            insertLine.id = 'mansInsertLine';
+            container.appendChild(insertLine);
+        }
+
+        // ============================================================
+        // MANS DROP-ACTION DETECTION & INSERT LINE
+        // ============================================================
+
+        /** Detect whether a drag over a mans slot should substitute or insert.
+         *  Uses cursor position projected onto the queue direction:
+         *  - Center 50% of slot → substitute (replace casteller)
+         *  - Leading 25% (toward center) → insert before
+         *  - Trailing 25% (away from center) → insert after
+         */
+        function getMansDropAction(wrapper, e) {
+            const col = wrapper.dataset.mansCol;
+            const depth = parseInt(wrapper.dataset.mansDepth);
+            const geo = MANS_GEOMETRY[col];
+            const posId = wrapper.dataset.positionId;
+            const existingName = state.getSlotContent(posId);
+
+            // Empty slot → always fill (substitute)
+            if (!existingName) return { action: 'substitute', insertIndex: null };
+
+            // Get cursor position relative to wrapper center
+            const rect = wrapper.getBoundingClientRect();
+            const cx = e.clientX - (rect.left + rect.width / 2);
+            const cy = e.clientY - (rect.top + rect.height / 2);
+
+            // Queue direction vector
+            const dx = geo.dLeft, dy = geo.dTop;
+            const len = Math.sqrt(dx * dx + dy * dy);
+
+            // Project cursor offset onto queue direction (signed distance from center)
+            const proj = (cx * dx + cy * dy) / len;
+
+            // Compute half-extent of the slot polygon along queue direction
+            const points = geo.points.split(/\s+/).map(p => {
+                const [x, y] = p.split(',').map(Number);
+                return { x: x - geo.w / 2, y: y - geo.h / 2 };
+            });
+            const projections = points.map(p => (p.x * dx + p.y * dy) / len);
+            const halfExtent = Math.max(...projections.map(Math.abs));
+
+            // Normalize: -1 = leading edge (toward center), +1 = trailing edge (outward)
+            const normalized = proj / halfExtent;
+
+            // Thresholds: center 50% = substitute, edges 25% each = insert
+            if (normalized < -0.4) return { action: 'insert', insertIndex: depth };
+            if (normalized > 0.4)  return { action: 'insert', insertIndex: depth + 1 };
+            return { action: 'substitute', insertIndex: null };
+        }
+
+        function showInsertLine(col, insertIndex) {
+            const line = document.getElementById('mansInsertLine');
+            if (!line) return;
+
+            const geo = MANS_GEOMETRY[col];
+
+            if (col === 'Rengla') {
+                // Horizontal line at the boundary between consecutive vertical slots
+                const left = geo.baseLeft - 10;
+                const top  = geo.baseTop + insertIndex * geo.dTop;
+                line.style.left      = `calc(50% + ${left}px)`;
+                line.style.top       = `calc(45% + ${top - 2}px)`;
+                line.style.width     = `${geo.w + 20}px`;
+                line.style.height    = '4px';
+                line.style.transform = 'none';
+            } else if (col === 'Buida') {
+                // Angled line along the long side of the Buida parallelogram
+                // Long side runs from (60,0)→(0,104): midpoint at (30, 52)
+                const left = geo.baseLeft + insertIndex * geo.dLeft + 30;
+                const top  = geo.baseTop  + insertIndex * geo.dTop  + 52;
+                const edgeAngle = Math.atan2(104, -60) * 180 / Math.PI; // ≈120°
+                line.style.left      = `calc(50% + ${left}px)`;
+                line.style.top       = `calc(45% + ${top}px)`;
+                line.style.width     = '130px';
+                line.style.height    = '4px';
+                line.style.transform = `translate(-50%, -50%) rotate(${edgeAngle}deg)`;
+            } else { // Plena
+                // Angled line along the long side of the Plena parallelogram
+                // Long side runs from (48,0)→(108,104): midpoint at (78, 52)
+                const left = geo.baseLeft + insertIndex * geo.dLeft + 78;
+                const top  = geo.baseTop  + insertIndex * geo.dTop  + 52;
+                const edgeAngle = Math.atan2(104, 60) * 180 / Math.PI; // ≈60°
+                line.style.left      = `calc(50% + ${left}px)`;
+                line.style.top       = `calc(45% + ${top}px)`;
+                line.style.width     = '130px';
+                line.style.height    = '4px';
+                line.style.transform = `translate(-50%, -50%) rotate(${edgeAngle}deg)`;
+            }
+
+            line.classList.add('visible');
+        }
+
+        function hideInsertLine() {
+            const line = document.getElementById('mansInsertLine');
+            if (line) line.classList.remove('visible');
+        }
+
+        // ============================================================
+        // MATRIX INSERT LINE — visual indicator for insert position
+        // ============================================================
+
+        function showMatrixInsertLine(matrixId, queueId, queueType, colIdx, insertIndex) {
+            const line = document.getElementById('matrixInsertLine');
+            if (!line) return;
+
+            const geo = MATRIX_GEOMETRY[matrixId];
+            if (!geo) return;
+
+            const colOffset = colIdx - 1;
+
+            // Compute the boundary point between depth (insertIndex-1) and insertIndex
+            // This is the center of the long edge between two consecutive depth cells
+            const cx = geo.originX + colOffset * geo.colSpacing * geo.edgeX + insertIndex * geo.depthSpacing * geo.outX;
+            const cy = geo.originY + colOffset * geo.colSpacing * geo.edgeY + insertIndex * geo.depthSpacing * geo.outY;
+
+            // The insert line runs along the edge direction (the long side)
+            const edgeAngle = Math.atan2(geo.edgeY, geo.edgeX) * 180 / Math.PI;
+
+            // Length: match the long side of the cell shape
+            const longSideLen = 130;
+
+            line.style.left      = `calc(50% + ${cx}px)`;
+            line.style.top       = `calc(45% + ${cy}px)`;
+            line.style.width     = `${longSideLen}px`;
+            line.style.height    = '4px';
+            line.style.transform = `translate(-50%, -50%) rotate(${edgeAngle}deg)`;
+
+            line.classList.add('visible');
+        }
+
+        function hideMatrixInsertLine() {
+            const line = document.getElementById('matrixInsertLine');
+            if (line) line.classList.remove('visible');
+        }
+
+        // ============================================================
+        // CROSSA OVERLAP RESOLUTION — perpendicular bisector clipping
+        // ============================================================
+
+        function resolveCrossaOverlaps() {
+            const wrappers = Array.from(document.querySelectorAll('.crossa-wrapper'));
+
+            // Reset all polygons to their original points
+            wrappers.forEach(w => {
+                const poly = w.querySelector('.crossa-rect polygon');
+                if (poly && poly.dataset.originalPoints) {
+                    poly.setAttribute('points', poly.dataset.originalPoints);
+                }
+            });
+
+            if (wrappers.length < 2) return;
+
+            // Collect info: bounding rect in screen coords + SVG viewBox mapping
+            const infos = wrappers.map(w => {
+                const r = w.getBoundingClientRect();
+                const svg = w.querySelector('.crossa-rect');
+                const vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+                return {
+                    el: w,
+                    cx: r.left + r.width / 2,
+                    cy: r.top + r.height / 2,
+                    rect: r,
+                    vb: { x: vb[0], y: vb[1], w: vb[2], h: vb[3] },
+                    svg: svg
+                };
+            });
+
+            // For each pair, check overlap and clip SVG polygons
+            for (let i = 0; i < infos.length; i++) {
+                for (let j = i + 1; j < infos.length; j++) {
+                    const a = infos[i], b = infos[j];
+                    // AABB overlap test
+                    if (a.rect.right <= b.rect.left || b.rect.right <= a.rect.left ||
+                        a.rect.bottom <= b.rect.top || b.rect.bottom <= a.rect.top) {
+                        continue;
+                    }
+
+                    // Perpendicular bisector in screen coords
+                    const mx = (a.cx + b.cx) / 2;
+                    const my = (a.cy + b.cy) / 2;
+                    const nx = b.cx - a.cx;
+                    const ny = b.cy - a.cy;
+
+                    clipCrossaPolygon(a, nx, ny, mx, my, -1);
+                    clipCrossaPolygon(b, nx, ny, mx, my, +1);
+                }
+            }
+        }
+
+        function screenToSVG(screenX, screenY, rect, vb) {
+            // Convert screen coordinates to SVG viewBox coordinates
+            return {
+                x: vb.x + (screenX - rect.left) / rect.width * vb.w,
+                y: vb.y + (screenY - rect.top) / rect.height * vb.h
+            };
+        }
+
+        function svgToScreen(svgX, svgY, rect, vb) {
+            // Convert SVG viewBox coordinates to screen coordinates
+            return {
+                x: rect.left + (svgX - vb.x) / vb.w * rect.width,
+                y: rect.top + (svgY - vb.y) / vb.h * rect.height
+            };
+        }
+
+        function clipCrossaPolygon(info, nx, ny, mx, my, sign) {
+            const poly = info.svg.querySelector('polygon');
+            if (!poly) return;
+
+            // Parse current SVG polygon points
+            const pointsStr = poly.getAttribute('points');
+            const svgPoly = pointsStr.split(/\s+/).map(pair => {
+                const [x, y] = pair.split(',').map(Number);
+                return { x, y };
+            }).filter(p => !isNaN(p.x) && !isNaN(p.y));
+
+            if (svgPoly.length < 3) return;
+
+            // Convert SVG polygon to screen coords, clip, convert back
+            const screenPoly = svgPoly.map(p => svgToScreen(p.x, p.y, info.rect, info.vb));
+
+            // Signed distance from bisector in screen space
+            function dist(p) { return nx * (p.x - mx) + ny * (p.y - my); }
+            function keeps(d) { return sign < 0 ? d <= 0.5 : d >= -0.5; }
+
+            // Sutherland-Hodgman clip
+            const clipped = [];
+            for (let i = 0; i < screenPoly.length; i++) {
+                const curr = screenPoly[i];
+                const next = screenPoly[(i + 1) % screenPoly.length];
+                const dCurr = dist(curr);
+                const dNext = dist(next);
+                const currIn = keeps(dCurr);
+                const nextIn = keeps(dNext);
+
+                if (currIn) clipped.push(curr);
+                if (currIn !== nextIn) {
+                    const t = dCurr / (dCurr - dNext);
+                    clipped.push({
+                        x: curr.x + t * (next.x - curr.x),
+                        y: curr.y + t * (next.y - curr.y)
+                    });
+                }
+            }
+
+            if (clipped.length < 3) return;
+
+            // Check if nothing was actually clipped
+            if (clipped.length === screenPoly.length && screenPoly.every(p => keeps(dist(p)))) {
+                return;
+            }
+
+            // Convert back to SVG viewBox coordinates and update polygon
+            const newPoints = clipped.map(p => {
+                const sv = screenToSVG(p.x, p.y, info.rect, info.vb);
+                return `${sv.x.toFixed(1)},${sv.y.toFixed(1)}`;
+            }).join(' ');
+
+            poly.setAttribute('points', newPoints);
         }
 
         function updateAllSlots() {
@@ -2239,8 +2950,16 @@
             document.querySelectorAll('.contrafort-wrapper').forEach(wrapper => {
                 updateContrafortSlot(wrapper.dataset.positionId);
             });
+            // SVG crossa rectangles (via their wrapper divs)
+            document.querySelectorAll('.crossa-wrapper').forEach(wrapper => {
+                updateCrossaSlot(wrapper.dataset.positionId);
+            });
             // Dynamic mans SVG queue (rebuild to match current assignments)
             rebuildMansQueues();
+            // Dynamic matrix queues (laterals + daus between columns)
+            rebuildMatrixQueues();
+            // Resolve overlapping crossa rectangles via perpendicular bisector clipping
+            resolveCrossaOverlaps();
         }
 
         function updateSlot(positionId) {
@@ -2566,6 +3285,74 @@
             }
         }
 
+        function updateCrossaSlot(positionId) {
+            const wrapper = document.querySelector(`.crossa-wrapper[data-position-id="${positionId}"]`);
+            if (!wrapper) return;
+
+            const svg = wrapper.querySelector('.crossa-rect');
+            const name = state.getSlotContent(positionId);
+            const casteller = name ? state.getCasteller(name) : null;
+            const content = svg.querySelector('.slot-content');
+            const label = svg.querySelector('.slot-label');
+
+            // Clear content group
+            content.innerHTML = '';
+
+            // Get text anchor position from label
+            const tx = parseFloat(label.getAttribute('x'));
+            const ty = parseFloat(label.getAttribute('y'));
+
+            if (casteller) {
+                wrapper.classList.add('filled');
+
+                label.setAttribute('opacity', '0.3');
+
+                const nameEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                nameEl.setAttribute('x', tx);
+                nameEl.setAttribute('y', ty - 12);
+                nameEl.setAttribute('text-anchor', 'middle');
+                nameEl.setAttribute('class', 'slot-name');
+                nameEl.textContent = casteller.name;
+                content.appendChild(nameEl);
+
+                const heightEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                heightEl.setAttribute('x', tx);
+                heightEl.setAttribute('y', ty + 2);
+                heightEl.setAttribute('text-anchor', 'middle');
+                heightEl.setAttribute('class', 'slot-height');
+                heightEl.textContent = `${casteller.height} cm`;
+                content.appendChild(heightEl);
+
+                // Indicators (height + expertise)
+                const hInd = getHeightIndicator(positionId, casteller);
+                const eInd = getExpertiseIndicator(positionId, casteller);
+                let indX = tx - 10;
+                [hInd, eInd].forEach(ind => {
+                    if (!ind) return;
+                    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    t.setAttribute('x', indX);
+                    t.setAttribute('y', ty + 14);
+                    t.setAttribute('text-anchor', 'middle');
+                    t.setAttribute('class', 'indicator-text');
+                    t.textContent = ind.textContent;
+                    t.setAttribute('fill', window.getComputedStyle(ind).color || 'white');
+                    t.setAttribute('title', ind.title);
+                    content.appendChild(t);
+                    indX += 20;
+                });
+
+                wrapper.draggable = true;
+                wrapper.ondragstart = handleDragStart;
+                wrapper.ondragend = handleDragEnd;
+            } else {
+                wrapper.classList.remove('filled');
+                wrapper.draggable = false;
+                wrapper.ondragstart = null;
+                wrapper.ondragend = null;
+                label.setAttribute('opacity', '1');
+            }
+        }
+
         function getHeightIndicator(positionId, casteller) {
             const [posType, col, idx] = state.parsePositionId(positionId);
             
@@ -2657,10 +3444,12 @@
             }
 
             if (posType === 'mans' || posType === 'laterals') {
+                // For laterals, extract base column from queue ID (e.g. "Rengla-left" → "Rengla")
+                const baseCol = posType === 'laterals' ? col.replace(/-(?:left|right)$/, '') : col;
                 if (idx === 0) {
                     // Depth 1: Reference baix + segon of column
-                    const baixName = state.getSlotContent(`baix-${col}`);
-                    const segonName = state.getSlotContent(`segon-${col}`);
+                    const baixName = state.getSlotContent(`baix-${baseCol}`);
+                    const segonName = state.getSlotContent(`segon-${baseCol}`);
                     const baix = baixName ? state.getCasteller(baixName) : null;
                     const segon = segonName ? state.getCasteller(segonName) : null;
                     if (!baix || !segon) return null;
@@ -2790,6 +3579,7 @@
             card.addEventListener('dragstart', (e) => {
                 state.draggedCasteller = casteller.name;
                 state.draggedElement = card;
+                state.dragSourcePosId = null; // Pool cards have no source position
                 card.classList.add('dragging');
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', casteller.name);
@@ -2799,6 +3589,20 @@
                 card.classList.remove('dragging');
                 state.draggedCasteller = null;
                 state.draggedElement = null;
+                state.dragSourcePosId = null;
+                // Clean up any lingering mans drag feedback
+                hideInsertLine();
+                document.querySelectorAll('.mans-wrapper.drag-substitute, .mans-wrapper.drag-insert').forEach(w => {
+                    w.classList.remove('drag-substitute', 'drag-insert');
+                    const lbl = w.querySelector('.mans-drag-label');
+                    if (lbl) lbl.textContent = '';
+                });
+                // Clean up matrix drag feedback
+                document.querySelectorAll('.matrix-slot-wrapper.drag-substitute, .matrix-slot-wrapper.drag-insert').forEach(w => {
+                    w.classList.remove('drag-substitute', 'drag-insert');
+                    const lbl = w.querySelector('.matrix-drag-label');
+                    if (lbl) lbl.textContent = '';
+                });
             });
 
             const name = document.createElement('div');
@@ -2858,6 +3662,19 @@
             state.draggedCasteller = null;
             state.draggedElement = null;
             state.dragSourcePosId = null;
+            // Clean up any lingering mans drag feedback
+            hideInsertLine();
+            document.querySelectorAll('.mans-wrapper.drag-substitute, .mans-wrapper.drag-insert').forEach(w => {
+                w.classList.remove('drag-substitute', 'drag-insert');
+                const lbl = w.querySelector('.mans-drag-label');
+                if (lbl) lbl.textContent = '';
+            });
+            // Clean up matrix drag feedback
+            document.querySelectorAll('.matrix-slot-wrapper.drag-substitute, .matrix-slot-wrapper.drag-insert').forEach(w => {
+                w.classList.remove('drag-substitute', 'drag-insert');
+                const lbl = w.querySelector('.matrix-drag-label');
+                if (lbl) lbl.textContent = '';
+            });
         }
 
         function handleDragOver(e) {
@@ -2869,18 +3686,85 @@
                 return;
             }
 
-            slot.classList.add('dragging-over');
+            // Mans queue: detect substitute vs insert based on cursor position
+            if (slot.classList.contains('mans-wrapper')) {
+                slot.classList.remove('dragging-over', 'drag-replace', 'drag-substitute', 'drag-insert');
+                const { action, insertIndex } = getMansDropAction(slot, e);
+                slot.dataset.dropAction = action;
+                slot.dataset.insertIndex = insertIndex !== null ? insertIndex : '';
+
+                if (action === 'substitute') {
+                    slot.classList.add('drag-substitute');
+                    const label = slot.querySelector('.mans-drag-label');
+                    if (label) label.textContent = '⇄ Replace';
+                    hideInsertLine();
+                } else {
+                    slot.classList.add('drag-insert');
+                    const label = slot.querySelector('.mans-drag-label');
+                    if (label) label.textContent = '⤵ Insert';
+                    showInsertLine(slot.dataset.mansCol, insertIndex);
+                }
+                e.dataTransfer.dropEffect = 'move';
+                return;
+            }
+
+            // Matrix slot: detect substitute vs insert based on cursor position
+            if (slot.classList.contains('matrix-slot-wrapper')) {
+                slot.classList.remove('dragging-over', 'drag-replace', 'drag-substitute', 'drag-insert');
+                const { action, insertIndex } = getMatrixDropAction(slot, e);
+                slot.dataset.dropAction = action;
+                slot.dataset.insertIndex = insertIndex !== null ? insertIndex : '';
+
+                if (action === 'substitute') {
+                    slot.classList.add('drag-substitute');
+                    const label = slot.querySelector('.matrix-drag-label');
+                    if (label) label.textContent = '⇄ Replace';
+                    hideMatrixInsertLine();
+                } else {
+                    slot.classList.add('drag-insert');
+                    const label = slot.querySelector('.matrix-drag-label');
+                    if (label) label.textContent = '⤵ Insert';
+                    showMatrixInsertLine(slot.dataset.matrixId, slot.dataset.matrixQueueId, slot.dataset.matrixQueueType, parseInt(slot.dataset.matrixColIdx), insertIndex);
+                }
+                e.dataTransfer.dropEffect = 'move';
+                return;
+            }
+
+            // Non-queue: detect if slot is filled → show replace feedback
+            const posId = slot.dataset.positionId;
+            const isFilled = posId && state.getSlotContent(posId);
+            slot.classList.remove('dragging-over', 'drag-replace');
+            if (isFilled) {
+                slot.classList.add('drag-replace');
+            } else {
+                slot.classList.add('dragging-over');
+            }
             e.dataTransfer.dropEffect = 'move';
         }
 
         function handleDragLeave(e) {
-            e.currentTarget.classList.remove('dragging-over', 'drag-invalid');
+            const slot = e.currentTarget;
+            slot.classList.remove('dragging-over', 'drag-invalid', 'drag-replace', 'drag-substitute', 'drag-insert', 'drag-insert-before', 'drag-insert-after');
+            if (slot.classList.contains('mans-wrapper')) {
+                delete slot.dataset.dropAction;
+                delete slot.dataset.insertIndex;
+                const lbl = slot.querySelector('.mans-drag-label');
+                if (lbl) lbl.textContent = '';
+                hideInsertLine();
+            }
+            if (slot.classList.contains('matrix-slot-wrapper')) {
+                delete slot.dataset.dropAction;
+                delete slot.dataset.insertIndex;
+                const lbl = slot.querySelector('.matrix-drag-label');
+                if (lbl) lbl.textContent = '';
+                hideMatrixInsertLine();
+            }
         }
 
         function handleDrop(e) {
             e.preventDefault();
             const slot = e.currentTarget;
-            slot.classList.remove('dragging-over', 'drag-invalid');
+            slot.classList.remove('dragging-over', 'drag-invalid', 'drag-replace', 'drag-substitute', 'drag-insert', 'drag-insert-before', 'drag-insert-after');
 
             if (slot.dataset.readOnly === 'true') {
                 showToast('Tronc positions are read-only');
@@ -2893,34 +3777,75 @@
             const targetPosId = slot.dataset.positionId;
             const [posType, col, idx] = state.parsePositionId(targetPosId);
 
-            // Mans queue: stack insert-between behavior
-            if (posType === 'mans' && idx !== undefined) {
-                const existingName = state.getSlotContent(targetPosId);
+            // Queue-style drop (mans + matrix daus/laterals): substitute or insert with stack behavior
+            const isQueueDrop = slot.classList.contains('mans-wrapper') || slot.classList.contains('matrix-slot-wrapper');
+            if (isQueueDrop && idx !== undefined) {
+                const dropAction = slot.dataset.dropAction || 'substitute';
+                let insertIndex = (slot.dataset.insertIndex !== undefined && slot.dataset.insertIndex !== '')
+                    ? parseInt(slot.dataset.insertIndex) : null;
 
-                // Remove from previous position first
+                // Clean up drag state
+                delete slot.dataset.dropAction;
+                delete slot.dataset.insertIndex;
+                if (slot.classList.contains('mans-wrapper')) {
+                    const lbl = slot.querySelector('.mans-drag-label');
+                    if (lbl) lbl.textContent = '';
+                    hideInsertLine();
+                }
+                if (slot.classList.contains('matrix-slot-wrapper')) {
+                    const lbl = slot.querySelector('.matrix-drag-label');
+                    if (lbl) lbl.textContent = '';
+                    hideMatrixInsertLine();
+                }
+
+                // No-op: dragging onto own slot with substitute
+                if (dropAction === 'substitute' && state.dragSourcePosId === targetPosId) {
+                    updateAllSlots();
+                    return;
+                }
+
+                // Save source info before removal (for index adjustment)
+                const sourceInfo = state.dragSourcePosId
+                    ? state.parsePositionId(state.dragSourcePosId) : null;
+
+                // Remove from previous position
                 state.removeFromAssignments(name);
 
                 // Ensure the queue array exists
-                if (!state.assignments.mans[col]) {
-                    state.assignments.mans[col] = [];
+                if (!state.assignments[posType][col]) {
+                    state.assignments[posType][col] = [];
                 }
 
-                if (existingName) {
-                    // Dropping onto a filled slot → insert before it (shift others back)
-                    state.assignments.mans[col].splice(idx, 0, [name]);
+                if (dropAction === 'insert' && insertIndex !== null) {
+                    // Adjust insert index if source was in the same queue column
+                    if (sourceInfo && sourceInfo[0] === posType && sourceInfo[1] === col
+                        && sourceInfo[2] !== undefined && sourceInfo[2] < insertIndex) {
+                        insertIndex--;
+                    }
+                    while (state.assignments[posType][col].length < insertIndex) {
+                        state.assignments[posType][col].push([null]);
+                    }
+                    state.assignments[posType][col].splice(insertIndex, 0, [name]);
                 } else {
-                    // Dropping onto the empty tail slot → append
-                    while (state.assignments.mans[col].length < idx) {
-                        state.assignments.mans[col].push([null]);
+                    let adjustedIdx = idx;
+                    if (sourceInfo && sourceInfo[0] === posType && sourceInfo[1] === col
+                        && sourceInfo[2] !== undefined && sourceInfo[2] < idx) {
+                        adjustedIdx--;
                     }
-                    if (state.assignments.mans[col].length <= idx) {
-                        state.assignments.mans[col].push([name]);
-                    } else {
-                        state.assignments.mans[col][idx] = [name];
+                    while (state.assignments[posType][col].length <= adjustedIdx) {
+                        state.assignments[posType][col].push([null]);
                     }
+                    state.assignments[posType][col][adjustedIdx] = [name];
+                }
+
+                // Clean up trailing nulls
+                while (state.assignments[posType][col].length > 0
+                    && (!state.assignments[posType][col][state.assignments[posType][col].length - 1]
+                        || state.assignments[posType][col][state.assignments[posType][col].length - 1][0] === null)) {
+                    state.assignments[posType][col].pop();
                 }
             } else {
-                // Default behavior for non-mans positions
+                // Default behavior for non-queue positions
                 state.assignToSlot(targetPosId, name);
             }
 
@@ -2928,7 +3853,7 @@
             updateAllSlots();
             updatePool();
             updateStatusBar();
-            
+
             state.saveHistory(`Moved ${name} to ${targetPosId}`);
         }
 
@@ -3211,7 +4136,7 @@
             // Calculate height compliance
             let totalSlots = 0;
             let compliantSlots = 0;
-            document.querySelectorAll('.slot.filled:not(.tronc)').forEach(slot => {
+            document.querySelectorAll('.slot.filled:not(.tronc), .matrix-slot-wrapper.filled').forEach(slot => {
                 const posId = slot.dataset.positionId;
                 const name = state.getSlotContent(posId);
                 if (!name) return;
