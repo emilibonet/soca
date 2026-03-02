@@ -1,0 +1,729 @@
+/* ==========================================
+   Canvas Area & All Pinya Slot Types
+   Includes: agulla, baix, contrafort, crossa,
+   mans, matrix SVG wrappers + drag feedback
+   ========================================== */
+
+/* --- Canvas Container --- */
+.canvas {
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(circle at center, #252525 0%, #1a1a1a 100%);
+}
+
+.canvas-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(1);
+    transform-origin: center;
+    transition: transform 0.15s ease;
+    width: 100%;
+    height: 100%;
+    max-width: 1400px;
+    max-height: 1000px;
+}
+
+.canvas-inner.panning {
+    transition: none;
+}
+
+.canvas.grabbing {
+    cursor: grabbing;
+}
+
+.canvas:not(.grabbing) {
+    cursor: grab;
+}
+
+/* --- Base Slot (HTML div) --- */
+.slot {
+    position: absolute;
+    background: var(--bg-card);
+    border: 2px dashed var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-size: 11px;
+    text-align: center;
+    z-index: 10;
+}
+
+.slot.tronc {
+    z-index: 5;
+    border-color: #555;
+    background: #1f1f1f;
+    cursor: default;
+    opacity: 0.5;
+    font-size: 10px;
+}
+
+.slot.filled {
+    z-index: 15;
+    border: 2px solid var(--accent);
+    background: var(--bg-card-hover);
+}
+
+.slot:not(.tronc):hover {
+    transform: scale(1.03);
+    border-color: var(--accent);
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.08);
+}
+
+.slot.dragging-over {
+    border-color: var(--accent);
+    background: rgba(217, 148, 74, 0.1);
+    transform: scale(1.05);
+}
+
+.slot.drag-replace {
+    border-color: var(--accent);
+    border-style: solid;
+    background: rgba(217, 148, 74, 0.08);
+    transform: scale(1.03);
+    box-shadow: 0 0 8px rgba(217, 148, 74, 0.5);
+}
+
+.slot.drag-invalid {
+    border-color: var(--error);
+    cursor: not-allowed;
+}
+
+.slot-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+}
+
+.slot-name {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.slot-height {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+}
+
+.slot-indicators {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+}
+
+.indicator.height-good { background: var(--success); }
+.indicator.height-ok { background: var(--warning); }
+.indicator.height-bad { background: var(--error); }
+
+.indicator.expertise-primary { color: gold; }
+.indicator.expertise-secondary { color: silver; }
+.indicator.expertise-none { color: #666; }
+
+/* Column Colors */
+.slot.col-rengla { border-color: var(--rengla); }
+.slot.col-plena { border-color: var(--plena); }
+.slot.col-buida { border-color: var(--buida); }
+
+/* --- Column Labels & Triangle Guide --- */
+.column-label {
+    position: absolute;
+    font-size: 28px;
+    font-weight: bold;
+    color: var(--text-dim);
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.label-rengla {
+    left: 50%;
+    top: 96%;
+    transform: translateX(-50%);
+    color: var(--col);
+}
+
+.label-plena {
+    left: 92%;
+    top: 5%;
+    transform: translateX(-50%);
+    color: var(--col);
+}
+
+.label-buida {
+    left: 8%;
+    top: 5%;
+    transform: translateX(-50%);
+    color: var(--col);
+}
+
+.tronc-triangle {
+    position: absolute;
+    left: 50%;
+    top: 40%;
+    transform: translate(-50%, -50%);
+    width: 600px;
+    height: 520px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.tronc-triangle::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    border: 2px dashed rgba(255, 255, 255, 0.05);
+    clip-path: polygon(50% 100%, 10% 0%, 90% 0%);
+}
+
+/* ==========================================
+   AGULLA — SVG triangles (center)
+   ========================================== */
+
+.agulla-wrapper {
+    position: absolute;
+    cursor: pointer;
+    z-index: 10;
+}
+.agulla-wrapper .agulla-triangle {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--border));
+    transition: filter 0.2s;
+}
+.agulla-wrapper:hover .agulla-triangle {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+}
+.agulla-wrapper.filled .agulla-triangle polygon {
+    fill: var(--bg-card-hover);
+}
+.agulla-wrapper.filled .agulla-triangle {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+}
+.agulla-wrapper.dragging-over .agulla-triangle polygon {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+}
+.agulla-wrapper.drag-replace .agulla-triangle polygon {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+.agulla-wrapper.drag-replace .agulla-triangle {
+    filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+}
+.agulla-triangle .slot-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+.agulla-triangle .slot-name {
+    fill: var(--text);
+    font-size: 11px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.agulla-triangle .slot-height {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+}
+.agulla-triangle .indicator-text {
+    font-size: 10px;
+    pointer-events: none;
+}
+
+/* Agulla positions */
+.agulla-wrapper.agulla-rengla {
+    left: calc(50% - 80px);
+    top: 45%;
+    width: 160px;
+    height: 47px;
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+.agulla-wrapper.agulla-buida {
+    left: calc(50% - 80px);
+    top: calc(45% - 93px);
+    width: 80px;
+    height: 139px;
+    clip-path: polygon(100% 66.9%, 100% 0%, 0% 100%);
+}
+.agulla-wrapper.agulla-plena {
+    left: 50%;
+    top: calc(45% - 93px);
+    width: 80px;
+    height: 139px;
+    clip-path: polygon(0% 66.9%, 0% 0%, 100% 100%);
+}
+
+/* ==========================================
+   BAIX — SVG rectangles touching agulla edges
+   ========================================== */
+
+.baix-wrapper {
+    position: absolute;
+    cursor: pointer;
+    z-index: 9;
+}
+.baix-wrapper .baix-rect {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--border));
+    transition: filter 0.2s;
+}
+.baix-wrapper:hover .baix-rect {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+}
+.baix-wrapper.filled .baix-rect polygon {
+    fill: var(--bg-card-hover);
+}
+.baix-wrapper.filled .baix-rect {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+}
+.baix-wrapper.dragging-over .baix-rect polygon {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+}
+.baix-wrapper.drag-replace .baix-rect polygon {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+.baix-wrapper.drag-replace .baix-rect {
+    filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+}
+.baix-rect .slot-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+.baix-rect .slot-name {
+    fill: var(--text);
+    font-size: 11px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.baix-rect .slot-height {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+}
+.baix-rect .indicator-text {
+    font-size: 10px;
+    pointer-events: none;
+}
+
+/* Baix positions */
+.baix-wrapper.baix-rengla {
+    left: calc(50% - 60px);
+    top: calc(45% + 47px);
+    width: 120px;
+    height: 55px;
+}
+.baix-wrapper.baix-buida {
+    left: calc(50% - 118px);
+    top: calc(45% - 103px);
+    width: 108px;
+    height: 132px;
+    clip-path: polygon(44.4% 100%, 100% 20.5%, 55.6% 0%, 0% 78.8%);
+}
+.baix-wrapper.baix-plena {
+    left: calc(50% + 10px);
+    top: calc(45% - 103px);
+    width: 108px;
+    height: 132px;
+    clip-path: polygon(55.6% 100%, 0% 20.5%, 44.4% 0%, 100% 78.8%);
+}
+
+/* ==========================================
+   CONTRAFORT — SVG rectangles behind baix
+   ========================================== */
+
+.contrafort-wrapper {
+    position: absolute;
+    cursor: pointer;
+    z-index: 8;
+}
+.contrafort-wrapper .contrafort-rect {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--border));
+    transition: filter 0.2s;
+}
+.contrafort-wrapper:hover .contrafort-rect {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+}
+.contrafort-wrapper.filled .contrafort-rect polygon {
+    fill: var(--bg-card-hover);
+}
+.contrafort-wrapper.filled .contrafort-rect {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+}
+.contrafort-wrapper.dragging-over .contrafort-rect polygon {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+}
+.contrafort-wrapper.drag-replace .contrafort-rect polygon {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+.contrafort-wrapper.drag-replace .contrafort-rect {
+    filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+}
+.contrafort-rect .slot-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+.contrafort-rect .slot-name {
+    fill: var(--text);
+    font-size: 11px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.contrafort-rect .slot-height {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+}
+.contrafort-rect .indicator-text {
+    font-size: 10px;
+    pointer-events: none;
+}
+
+/* Contrafort positions */
+.contrafort-wrapper.contrafort-rengla {
+    left: calc(50% - 60px);
+    top: calc(45% + 102px);
+    width: 120px;
+    height: 55px;
+}
+.contrafort-wrapper.contrafort-buida {
+    left: calc(50% - 165px);
+    top: calc(45% - 131px);
+    width: 108px;
+    height: 133px;
+    clip-path: polygon(43.5% 99.2%, 99.1% 21.1%, 55.6% 0.8%, 0% 78.9%);
+}
+.contrafort-wrapper.contrafort-plena {
+    left: calc(50% + 57px);
+    top: calc(45% - 131px);
+    width: 108px;
+    height: 133px;
+    clip-path: polygon(56.5% 99.2%, 0.9% 21.1%, 44.4% 0.8%, 100% 78.9%);
+}
+
+/* ==========================================
+   CROSSA — SVG rectangles flanking baix+contrafort
+   ========================================== */
+
+.crossa-wrapper {
+    position: absolute;
+    cursor: pointer;
+    z-index: 9;
+}
+.crossa-wrapper .crossa-rect {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--border));
+    transition: filter 0.2s;
+}
+.crossa-wrapper:hover .crossa-rect {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+}
+.crossa-wrapper.filled .crossa-rect polygon {
+    fill: var(--bg-card-hover);
+}
+.crossa-wrapper.filled .crossa-rect {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+}
+.crossa-wrapper.dragging-over .crossa-rect polygon {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+}
+.crossa-wrapper.drag-replace .crossa-rect polygon {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+.crossa-wrapper.drag-replace .crossa-rect {
+    filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+}
+.crossa-rect .slot-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+.crossa-rect .slot-name {
+    fill: var(--text);
+    font-size: 11px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.crossa-rect .slot-height {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+}
+.crossa-rect .indicator-text {
+    font-size: 10px;
+    pointer-events: none;
+}
+
+/* Crossa positions */
+.crossa-wrapper.crossa-rengla-0 {
+    left: calc(50% - 110px);
+    top: calc(45% + 47px);
+    width: 50px;
+    height: 110px;
+}
+.crossa-wrapper.crossa-rengla-1 {
+    left: calc(50% + 60px);
+    top: calc(45% + 47px);
+    width: 50px;
+    height: 110px;
+}
+.crossa-wrapper.crossa-buida-0 {
+    left: calc(50% - 105px);
+    top: calc(45% - 173px);
+    width: 120px;
+    height: 97px;
+}
+.crossa-wrapper.crossa-buida-1 {
+    left: calc(50% - 190px);
+    top: calc(45% - 26px);
+    width: 120px;
+    height: 98px;
+}
+.crossa-wrapper.crossa-plena-0 {
+    left: calc(50% - 15px);
+    top: calc(45% - 173px);
+    width: 120px;
+    height: 97px;
+}
+.crossa-wrapper.crossa-plena-1 {
+    left: calc(50% + 70px);
+    top: calc(45% - 26px);
+    width: 120px;
+    height: 98px;
+}
+
+/* ==========================================
+   MANS — SVG rectangles stacking outward
+   ========================================== */
+
+.mans-wrapper {
+    position: absolute;
+    cursor: pointer;
+    z-index: 7;
+}
+.mans-wrapper .mans-rect {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--border));
+    transition: filter 0.2s;
+}
+.mans-wrapper:hover .mans-rect {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+}
+.mans-wrapper.filled .mans-rect polygon {
+    fill: var(--bg-card-hover);
+}
+.mans-wrapper.filled .mans-rect {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+}
+.mans-wrapper.dragging-over .mans-rect polygon {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+}
+.mans-wrapper.drag-substitute .mans-rect polygon {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+.mans-wrapper.drag-substitute .mans-rect {
+    filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+}
+.mans-wrapper.drag-insert .mans-rect polygon {
+    stroke: var(--success);
+    stroke-width: 3;
+    stroke-dasharray: 8 4;
+}
+.mans-wrapper.drag-insert .mans-rect {
+    filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.5));
+}
+
+/* Mans insert indicator line */
+.mans-insert-line {
+    position: absolute;
+    background: var(--success);
+    border-radius: 2px;
+    pointer-events: none;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 0.15s;
+    box-shadow: 0 0 8px var(--success), 0 0 16px rgba(76, 175, 80, 0.3);
+}
+.mans-insert-line.visible {
+    opacity: 1;
+}
+
+/* Mans drag action label */
+.mans-drag-label {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    background: var(--bg-dark);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 31;
+    opacity: 0;
+    transition: opacity 0.15s;
+    transform: translateX(-50%);
+}
+.mans-wrapper.drag-substitute .mans-drag-label,
+.mans-wrapper.drag-insert .mans-drag-label {
+    opacity: 1;
+}
+.mans-wrapper.drag-substitute .mans-drag-label {
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+.mans-wrapper.drag-insert .mans-drag-label {
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.mans-rect .slot-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+.mans-rect .slot-name {
+    fill: var(--text);
+    font-size: 11px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.mans-rect .slot-height {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+}
+.mans-rect .indicator-text {
+    font-size: 10px;
+    pointer-events: none;
+}
+
+/* ==========================================
+   MATRIX — SVG slot wrappers (laterals + daus)
+   ========================================== */
+
+.matrix-slot-wrapper {
+    position: absolute;
+    cursor: pointer;
+    z-index: 6;
+}
+.matrix-slot-wrapper .matrix-slot-rect {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--border));
+    transition: filter 0.2s;
+}
+.matrix-slot-wrapper:hover .matrix-slot-rect {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+}
+.matrix-slot-wrapper.filled .matrix-slot-rect polygon {
+    fill: var(--bg-card-hover);
+}
+.matrix-slot-wrapper.filled .matrix-slot-rect {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+}
+.matrix-slot-wrapper.dragging-over .matrix-slot-rect polygon {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+}
+.matrix-slot-wrapper.drag-substitute .matrix-slot-rect polygon {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+.matrix-slot-wrapper.drag-substitute .matrix-slot-rect {
+    filter: drop-shadow(0 0 8px rgba(217, 148, 74, 0.5));
+}
+.matrix-slot-wrapper.drag-insert .matrix-slot-rect polygon {
+    stroke: var(--success);
+    stroke-width: 3;
+    stroke-dasharray: 8 4;
+}
+.matrix-slot-wrapper.drag-insert .matrix-slot-rect {
+    filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.5));
+}
+.matrix-slot-rect .slot-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+.matrix-slot-rect .slot-name {
+    fill: var(--text);
+    font-size: 11px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.matrix-slot-rect .slot-height {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+}
+.matrix-slot-rect .indicator-text {
+    font-size: 10px;
+    pointer-events: none;
+}
+
+/* Matrix drag action label */
+.matrix-slot-wrapper .matrix-drag-label {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    background: var(--bg-dark);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 31;
+    opacity: 0;
+    transition: opacity 0.15s;
+    transform: translateX(-50%);
+}
+.matrix-slot-wrapper.drag-substitute .matrix-drag-label {
+    opacity: 1;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+.matrix-slot-wrapper.drag-insert .matrix-drag-label {
+    opacity: 1;
+    color: var(--success);
+    border: 1px solid var(--success);
+}
