@@ -1,3 +1,16 @@
+"""Utility functions shared across the SOCA package.
+
+Provides:
+    - ``build_columns`` — convert column layout config to base heights.
+    - ``compute_column_tronc_heights`` — look up actual tronc-member heights
+      per column from the casteller database.
+    - ``filter_available_castellers`` / ``_extract_names_from_assignments`` —
+      exclude already-assigned castellers from candidate pools.
+    - ``get_logger`` / ``ColoredLevelFormatter`` — ANSI-coloured logging to
+      stderr, controlled by the ``SOCA_LOG_LEVEL`` environment variable.
+    - ``_get_tui_logger`` — bridge to the optional TUI display manager.
+"""
+
 import pandas as pd
 from typing import Any, Dict, Optional, Tuple, List
 
@@ -249,7 +262,11 @@ _COLOR_RESET = '\u001b[0m'
 
 
 class ColoredLevelFormatter(logging.Formatter):
-    """Formatter that wraps the entire formatted log line in ANSI color codes."""
+    """Log formatter that colours the entire output line based on log level.
+
+    Maps standard Python log levels to ANSI escape codes (red for ERROR/CRITICAL,
+    yellow for WARNING, blue for INFO, orange for DEBUG, grey for TRACE).
+    """
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
         text = super().format(record)
@@ -288,7 +305,13 @@ def get_logger(name: str = None) -> logging.Logger:
 _tui_manager = None
 
 def _get_tui_logger(section_name=None):
-    """Get TUI-aware logger if manager is available."""
+    """Return a ``SectionLogger`` for the optional TUI display manager.
+
+    If the global ``_tui_manager`` is set (by the TUI display layer), this
+    returns a ``SectionLogger`` that routes messages to the appropriate TUI
+    section.  Otherwise returns ``None``, signalling the caller to fall back
+    to the standard ``get_logger()`` output.
+    """
     if _tui_manager is not None:
         try:
             from .display import SectionLogger

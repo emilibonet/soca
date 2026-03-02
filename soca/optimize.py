@@ -1,3 +1,23 @@
+"""Optimization engine for castell pinya position assignments.
+
+Provides multiple assignment algorithms (exhaustive, greedy, simulated annealing,
+adaptive SA) that optimise casteller-to-position assignments based on height
+compatibility, expertise match, weight preference, and cross-column balance.
+
+Key entry points:
+    - ``find_optimal_assignment`` — assigns castellers to a single tronc position
+      (baix, crossa, contrafort, agulla) across all columns.
+    - ``assign_rows_pipeline`` — assigns all peripheral queue positions (mans,
+      daus, laterals) via global simulated annealing, with support for
+      preassigned (locked) positions.
+    - ``global_peripheral_optimization`` — low-level global SA across all
+      queue types simultaneously.
+
+Scoring is governed by ``PositionRequirements`` / ``QueueSpec`` dataclasses
+defined in ``data.py``.  The shortage factor (§2.2 of the manual) reduces
+quality penalties when the candidate pool is scarce.
+"""
+
 import numpy as np
 import pandas as pd
 import math
@@ -328,10 +348,10 @@ def _calculate_reference_heights(
     return reference_heights
 
 def _should_use_balance_optimization(position_spec: PositionRequirements) -> bool:
-    """
-    Determine if position needs column balancing for better distribution.
-    
-    Returns True for positions that should distribute evenly across columns.
+    """Return True if ``position_spec`` should use round-robin column balancing.
+
+    Positions like daus, laterals, crossa, and contrafort benefit from even
+    distribution across columns rather than greedy fill.
     """
     balance_positions = ['daus', 'laterals', 'primeres_mans', 'crossa', 'contrafort']
     return any(pos in position_spec.position_name for pos in balance_positions)
@@ -456,7 +476,17 @@ def _greedy_assignment(
     shortage_factor: float = 1.0,
     return_stats: bool = True
 ) -> Tuple[Dict[str, Tuple[str, ...]], Dict]:
-    """Greedy assignment algorithm - works for all position types."""
+    """Greedy assignment: iteratively pick the best-scoring candidate per slot.
+
+    For positions with ``EVEN_DISTRIBUTION`` or similar balance objectives,
+    uses round-robin column cycling to ensure even fill.  Otherwise fills
+    columns sequentially sorted by reference height (tallest first).
+
+    Returns
+    -------
+    tuple[dict, dict]
+        (assignment mapping column→tuple of names, stats dict).
+    """
     stats = {'iterations': 0, 'final_score': 0, 'initial_score': 0}
     
     assignment = {}
@@ -592,7 +622,18 @@ def _exhaustive_assignment(
     shortage_factor: float = 1.0,
     return_stats: bool = True
 ) -> Tuple[Dict[str, Tuple[str, ...]], Dict]:
-    """Exhaustive search - adapts to position type."""
+    """Exhaustive search over all valid permutations of candidates to columns.
+
+    Evaluates the Cartesian product of per-column candidate combinations and
+    returns the conflict-free assignment with the lowest total score.  Falls
+    back to ``_greedy_assignment`` when the search space exceeds 1 000 000
+    combinations or there are too few candidates.
+
+    Returns
+    -------
+    tuple[dict, dict]
+        (best assignment mapping column→tuple of names, stats dict).
+    """
     
     from itertools import combinations, product
 
@@ -667,7 +708,21 @@ def _score_complete_assignment(
     use_weight: bool,
     shortage_factor: float = 1.0,
 ) -> float:
-    """Score a complete assignment."""
+    """Score a complete column assignment (lower is better).
+
+    Dispatches to one of four scoring strategies based on
+    ``position_spec.optimization_objective``:
+
+    - **COLUMN_BALANCE** (baix): minimise height variance across columns.
+    - **FILL_ALL_REQUIRED** (agulla): penalise empty slots heavily, then
+      score quality.
+    - **EVEN_DISTRIBUTION** (crossa, contrafort): penalise uneven column
+      counts, then score quality.
+    - **HEIGHT_COMPLIANCE** (queues): pure per-candidate quality scoring.
+
+    Structural penalties (empty slots, variance) are *not* scaled by
+    ``shortage_factor``; quality penalties *are*.
+    """
     
     total_score = 0
     
@@ -1701,7 +1756,11 @@ def _calculate_reference_for_global_assignment(
 def _clean_peripheral_preassignments(all_assignments: Dict[str, Dict]) -> None:
     """Remove names already assigned to tronc positions from peripheral queues.
 
-    Operates in-place on *all_assignments*.
+    Scans all tronc positions (baix, segon, terç, crossa, contrafort, agulla,
+    dosos, acotxador, enxaneta) and replaces any matching name in mans/daus/
+    laterals depth tuples with ``None``.  Queues left entirely empty after
+    cleaning are deleted from the dict.  Operates in-place on
+    *all_assignments*.
     """
     TRONC_POSITIONS = {
         'baix', 'segon', 'terç', 'crossa', 'contrafort',
@@ -1753,7 +1812,7 @@ def assign_rows_pipeline(
     include_laterals: bool = True,
     include_daus: bool = True,
     include_mans: bool = True
-):
+) -> Tuple[Dict[str, Dict], Dict]:
     """Pipeline using global optimization for all peripheral positions, preserving preassignments.
 
     Key behaviours:

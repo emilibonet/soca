@@ -1,7 +1,25 @@
-"""
-End-to-end castell assignment pipeline — patched to accept a partial `all_assignments` input.
+"""End-to-end castell assignment pipeline.
 
-This file remains the orchestrator and keeps no heuristics beyond orchestration.
+Orchestrates the full assignment flow for a castell:
+
+1. Resolve preassigned names from YAML layout files via
+   ``apply_preassigned_to_all_assignments``.
+2. Assign tronc positions in structural order (baix → crossa →
+   contrafort → agulla) using ``find_optimal_assignment``.
+3. Assign peripheral queues (mans, daus, laterals) via
+   ``assign_rows_pipeline``.
+4. Print a human-readable summary through ``display.summarize_assignments``.
+
+Key entry points:
+    - ``build_castell_assignment`` — run the full pipeline given a
+      casteller DataFrame, a castell config dict, and optional
+      preassigned positions.
+    - ``apply_preassigned_to_all_assignments`` — resolve a YAML
+      preassigned layout dict into canonical names and populate
+      an ``AssignmentState``.
+
+This module contains no scoring heuristics — those live in
+``optimize.py``.
 """
 from typing import Dict, Tuple, Optional, Any, List
 import unicodedata
@@ -30,7 +48,36 @@ def build_castell_assignment(
     use_weight: bool = True,
     all_assignments: Optional[Dict[str, Dict[str, tuple]]] = None,
 ) -> Dict[str, Dict]:
-    """Build castell assignment with new queue-based structure."""
+    """Run the full castell assignment pipeline.
+
+    Assigns all positions in structural order (baix → crossa → contrafort
+    → agulla → peripheral queues), respecting any positions already
+    present in *all_assignments* (e.g. from preassignment).
+
+    Parameters
+    ----------
+    castellers : pd.DataFrame
+        Full casteller roster (must include 'Nom complet', 'Alçada (cm)',
+        'Posició 1', 'Posició 2').
+    castell_config : dict
+        Castell layout configuration including 'columns', 'tronc_positions',
+        and optional flags like 'include_crossa', 'include_agulles',
+        'mans', 'daus', 'laterals'.
+    optimization_method : str
+        One of 'exhaustive', 'greedy', 'simulated_annealing', or
+        'adaptive_simulated_annealing'.
+    use_weight : bool
+        Whether to factor weight preferences into scoring.
+    all_assignments : dict, optional
+        Partially-filled assignment dict (e.g. from preassignment).
+        Unset columns are filled by the optimizer.
+
+    Returns
+    -------
+    dict
+        Complete assignment mapping ``{position: {column: (names, ...)}}``,
+        also containing queue keys ``{queue_type: {queue_id: [(name,), ...]}}``.
+    """
     
     # Build columns with normalized names (Rengla/Plena/Buida)
     columns = build_columns(castell_config['columns'])
@@ -201,7 +248,12 @@ def build_castell_assignment(
 
 
 def _normalize_name(s: str) -> str:
-    """Normalize a name for tolerant matching: lower, strip, remove diacritics, collapse spaces and punctuation."""
+    """Normalize a casteller name for fuzzy matching.
+
+    Applies: lowercase, strip, NFKD decomposition to remove diacritics,
+    punctuation removal, and whitespace collapse.  Used by
+    ``_find_candidates_by_name`` for tolerant preassignment resolution.
+    """
     if not isinstance(s, str):
         s = str(s)
     s = s.strip().lower()
@@ -221,7 +273,11 @@ def _normalize_name(s: str) -> str:
 
 
 def _find_candidates_by_name(df: pd.DataFrame, name: str, name_col: str) -> pd.DataFrame:
-    """Return candidate rows matching the name using multiple strategies."""
+    """Return candidate rows matching *name* using cascading strategies.
+
+    Tries in order: exact match → case-insensitive → normalized exact →
+    normalized substring.  Returns an empty DataFrame if nothing matches.
+    """
     # 1) exact
     exact = df[df[name_col] == name]
     if len(exact) > 0:
@@ -487,7 +543,11 @@ def apply_preassigned_to_all_assignments(
 def _resolve_to_canonical_name(
     resolved, castellers: pd.DataFrame, name_col: str, id_col: Optional[str]
 ) -> str:
-    """Convert a resolved id/index/string back to the canonical name."""
+    """Convert a resolved identifier back to the canonical 'Nom complet' string.
+
+    Handles the case where ``resolve_name_to_id`` returned an index or id
+    rather than the name itself.
+    """
     if isinstance(resolved, str):
         return resolved
 
@@ -517,7 +577,10 @@ def _warn_if_lacking_expertise(
     name_col: str,
     _log,
 ) -> None:
-    """Emit a warning if the casteller lacks required expertise for *pos*."""
+    """Log a warning if *name*'s Posició 1/2 don't match the position's expertise keywords.
+
+    Advisory only — the assignment still proceeds.
+    """
     row = castellers[castellers[name_col] == name]
     if row.empty:
         return
@@ -542,9 +605,11 @@ def _sort_names_by_height(
     castellers: pd.DataFrame,
     name_col: str = 'Nom complet',
 ) -> List[str]:
-    """Sort names by height descending (tallest first for queue depth 1).
+    """Sort names by height descending (tallest first).
 
-    Names without a height record in the DataFrame are placed at the end.
+    Used to place the tallest preassigned casteller at queue depth 1,
+    which is the structurally critical position.  Names without a height
+    record in the DataFrame are placed at the end.
     """
     def _height(name: str) -> float:
         row = castellers[castellers[name_col] == name]

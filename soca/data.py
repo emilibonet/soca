@@ -1,3 +1,27 @@
+"""Data models, Google Sheets integration, and position/queue specifications.
+
+Defines the core domain types used throughout SOCA:
+
+    - ``Casteller`` — canonical casteller record (name, height, positions).
+    - ``PositionRequirements`` — what a tronc position (baix, crossa, etc.)
+      demands: height ratios, expertise keywords, scoring weights.
+    - ``QueueSpec`` — specification for peripheral queue positions (mans,
+      daus, laterals) with depth-dependent height constraints.
+    - ``WeightPreference`` / ``OptimizationObjective`` — enums steering the
+      optimizer's scoring strategy.
+
+Pre-built specifications:
+    - ``POSITION_SPECS`` — dict of ``PositionRequirements`` for standard
+      tronc positions (baix, crossa, contrafort, agulla).
+    - ``MANS_QUEUE_SPECS`` / ``DAUS_QUEUE_SPECS`` / ``LATERALS_QUEUE_SPECS``
+      — dicts of ``QueueSpec`` for the three peripheral queue families.
+
+Data access:
+    - ``get_castellers()`` — fetch the casteller roster from Google Sheets.
+    - ``add_castellers()`` — append new ``Casteller`` instances to a DataFrame.
+    - ``apply_spec_overrides()`` — patch specs at runtime from YAML config.
+"""
+
 import warnings
 warnings.filterwarnings(
     "ignore",
@@ -16,11 +40,13 @@ from dotenv import load_dotenv
 
 
 class WeightPreference(Enum):
+    """Whether the optimizer should prefer heavier, lighter, or neutral weight."""
     HEAVIER = "heavier"
     LIGHTER = "lighter"
     NEUTRAL = "neutral"
 
 class OptimizationObjective(Enum):
+    """High-level scoring strategy used by the optimizer for a position type."""
     COLUMN_BALANCE = "column_balance"          # Minimize variance across columns (baix)
     EVEN_DISTRIBUTION = "even_distribution"    # Minimize variance across columns (crosses, contraforts, laterals)
     FILL_ALL_REQUIRED = "fill_all_required"    # Every slot filled before optimizing quality (agulles)
@@ -387,6 +413,19 @@ class Casteller:
         }
 
 def get_castellers() -> pd.DataFrame:
+    """Fetch the casteller roster from the Google Sheets 'Base de dades' tab.
+
+    Requires ``SERVICE_ACCOUNT_AUTH`` and ``FILE_KEY`` environment variables
+    (loaded from ``.env``).  Filters to active members (``Assaig == 'SI'``),
+    trims columns after 'Funció addicional', drops admin-only columns, and
+    adds a boolean ``assignat`` flag initialised to ``False``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned roster with columns: Nom complet, Nom, Cognoms,
+        Alçada (cm), Posició 1, Posició 2, assignat, etc.
+    """
     load_dotenv()
     df = pygsheets.authorize(
         service_file=os.getenv("SERVICE_ACCOUNT_AUTH")

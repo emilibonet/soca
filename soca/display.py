@@ -1,5 +1,22 @@
-"""
-Modern TUI display manager for castell assignment pipeline.
+"""TUI display and text-based summary output for the castell assignment pipeline.
+
+Provides two complementary display systems:
+
+1. **Rich TUI** (``SectionManager`` + ``SectionLogger``): a live terminal
+   panel with animated spinners, RGB gradient text, scrollable viewport,
+   and per-section log routing.  Used when the pipeline runs interactively.
+
+2. **Plain-text summary** (``summarize_assignments``): generates a
+   human-readable report of all tronc and queue assignments with
+   reference heights, height-ratio compliance, expertise marks, penalty
+   scores, and structural validation.
+
+Helper functions:
+    - ``_print_tronc_assignment`` / ``_print_queue_summary`` — per-position
+      formatting generators.
+    - ``validate_structure`` — checks for missing critical positions,
+      queue imbalance, and duplicate assignments.
+    - ``create_final_panel`` — Rich panel shown at pipeline completion.
 """
 import pandas as pd
 from contextlib import contextmanager
@@ -97,7 +114,26 @@ def _colored_text(message: str, phase: float,
 
 
 class SectionManager:
-    """Manages TUI sections with active spinner and dimmed completed sections."""
+    """Live TUI display with animated section headers, log routing, and scrolling.
+
+    Renders a Rich ``Panel`` with spinner + RGB gradient animation on the
+    active section, green checkmarks on completed ones, and per-section
+    log lines.  The viewport auto-scrolls to the latest output but
+    supports manual scrolling via arrow keys, j/k, and Page Up/Down.
+
+    Parameters
+    ----------
+    accent_color : str
+        CSS/Rich colour for borders and active section (e.g. 'cyan', '#FF8800').
+    animation_enabled : bool
+        Enable spinner and gradient animation on the active section.
+    panel_title : str
+        Title shown at the top of the panel border.
+    transient : bool
+        If True the panel disappears when ``stop()`` is called.
+    refresh_per_second : int
+        Maximum render refresh rate (default 4).
+    """
     
     def __init__(
         self,
@@ -522,7 +558,12 @@ class SectionManager:
 
 
 class SectionLogger:
-    """Logger adapter that routes messages to section manager."""
+    """Logger adapter that forwards messages to a ``SectionManager`` section.
+
+    Provides the same ``info``/``warning``/``error``/``debug`` interface as
+    Python's ``logging.Logger`` so callers in ``optimize.py`` can use it
+    transparently via ``_get_tui_logger()``.
+    """
     
     def __init__(self, section_manager: SectionManager, section_title: Optional[str] = None):
         self.manager = section_manager
@@ -569,7 +610,12 @@ def _print_queue_summary(
     preassigned_swapped_names: Optional[set] = None,
     failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
 ):
-    """Generate formatted summary of queue assignments with reference/target info."""
+    """Yield formatted lines summarising mans/daus/laterals queue assignments.
+
+    Each depth entry shows the casteller name, height, reference height,
+    target range, per-person penalty score, expertise mark (★), and
+    preassignment pin (⌖) or replacement arrow (⇆).
+    """
     if preassigned_names is None:
         preassigned_names = set()
     if preassigned_swapped_names is None:
@@ -687,7 +733,12 @@ def _print_tronc_assignment(
     preassigned_swapped_names: Optional[set] = None,
     failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
 ):
-    """Generate tronc position assignments."""
+    """Yield formatted lines for a single tronc position (baix/crossa/contrafort/agulla).
+
+    Shows per-column reference height, target range, each casteller's height
+    as a percentage of reference, expertise mark, penalty score, and
+    preassignment indicators.
+    """
     if preassigned_names is None:
         preassigned_names = set()
     if preassigned_swapped_names is None:
@@ -771,7 +822,15 @@ def _print_tronc_assignment(
 
 
 def validate_structure(all_assignments: Dict[str, Dict], columns: Dict[str, float]) -> Tuple[List[str], List[str]]:
-    """Validate completed castell structure."""
+    """Check a completed castell structure for critical errors and warnings.
+
+    Returns
+    -------
+    tuple[list[str], list[str]]
+        (errors, warnings).  Errors include missing baix/agulla per column
+        and duplicate assignments.  Warnings cover missing contraforts,
+        insufficient crosses, and queue depth imbalance.
+    """
     errors = []
     warnings = []
     
@@ -855,7 +914,12 @@ def summarize_assignments(
     preassigned_swapped_names: Optional[set] = None,
     failed_preassignments: Optional[Dict[str, Dict[str, Dict[int, str]]]] = None,
 ) -> str:
-    """Generate comprehensive summary of all assignments as a string."""
+    """Generate a comprehensive plain-text summary of all assignments.
+
+    Combines tronc position tables, queue depth tables, structural
+    validation results, and an unassigned-castellers listing into a
+    single string suitable for terminal output or file export.
+    """
     if preassigned_names is None:
         preassigned_names = set()
     if preassigned_swapped_names is None:
@@ -934,7 +998,11 @@ def summarize_assignments(
 
 
 def create_final_panel(all_assignments: Dict, castellers, output_file: str) -> Panel:
-    """Create final completion panel."""
+    """Create a Rich ``Panel`` shown at pipeline completion.
+
+    Displays a green-bordered summary with the total number of assigned
+    castellers and the output file path.
+    """
     content = Text()
     
     # Count total assigned

@@ -1,18 +1,25 @@
-"""
-AssignmentState — single source of truth for all castell position assignments.
+"""AssignmentState — single source of truth for all castell position assignments.
 
-Invariants enforced:
-- A casteller name can appear in at most ONE position across the entire castell.
-- The internal `_assigned_names` set is always in sync with actual assignments.
-- Tronc positions store: {column: (name1, name2, ...)}
-- Queue positions store: {queue_id: [(name,), (name,), ...]}
+Maintains an in-memory mapping of every position → column → assigned
+casteller names, with O(1) duplicate detection via an ``_assigned_names``
+set.  All mutations go through ``assign_tronc`` / ``assign_queue`` which
+enforce the one-assignment-per-casteller invariant.
 
-Usage:
+Data shapes:
+    - Tronc positions: ``{position: {column: (name1, name2, ...)}}``
+    - Queue positions: ``{queue_type: {queue_id: [(name,), (name,), ...]}}``
+
+Import / export:
+    - ``to_dict()`` returns the raw dict for ``optimize.py`` / ``display.py``.
+    - ``from_dict()`` reconstructs an ``AssignmentState`` from a plain dict.
+
+Usage::
+
     state = AssignmentState()
     state.assign_tronc('baix', 'Rengla', ('Mario',))
     state.assign_queue('mans', 'Rengla', [('Xavi',), ('Luca',)])
     available = state.filter_available(castellers_df)
-    all_dict = state.to_dict()   # for optimize.py / display.py compatibility
+    all_dict = state.to_dict()
 """
 from typing import Dict, List, Optional, Set, Tuple, Any
 import pandas as pd
@@ -29,7 +36,16 @@ class DuplicateAssignmentError(ValueError):
 class AssignmentState:
     """Single source of truth for all castell position assignments.
 
-    Thread-unsafe (single-threaded pipeline assumed).
+    Enforces the invariant that each casteller name appears in at most one
+    slot across the entire castell.  Thread-unsafe (single-threaded pipeline
+    assumed).
+
+    Attributes
+    ----------
+    TRONC_POSITIONS : frozenset
+        Known tronc position names (baix, segon, terç, crossa, …).
+    QUEUE_TYPES : frozenset
+        Known queue type names (mans, daus, laterals).
     """
 
     TRONC_POSITIONS = frozenset({
@@ -211,10 +227,11 @@ class AssignmentState:
         return state
 
     def merge_queue_results(self, result: Dict[str, Dict]) -> None:
-        """Merge optimization results for queues into state.
+        """Merge optimizer output for peripheral queues into this state.
 
         *result* has structure ``{queue_type: {queue_id: [(name,), ...]}}``.
-        Only merges queues not already fully assigned.
+        Overwrites existing queue data per queue_id and updates the
+        ``_assigned_names`` tracking set accordingly.
         """
         for queue_type in ('mans', 'daus', 'laterals'):
             if queue_type not in result:
@@ -233,8 +250,11 @@ class AssignmentState:
     def clean_peripheral_for_tronc(self) -> None:
         """Remove names assigned to tronc positions from peripheral queues.
 
-        This prevents someone preassigned to both baix *and* mans from
-        appearing in both.
+        Prevents a casteller preassigned to both a tronc slot (e.g. baix)
+        and a queue slot (e.g. mans) from appearing in both.  Replaces
+        conflicting names with ``None`` in the queue depth tuples, and
+        deletes queue entries that become entirely empty.  Rebuilds
+        ``_assigned_names`` afterwards.
         """
         tronc_names: Set[str] = set()
         for pos in self.TRONC_POSITIONS:
